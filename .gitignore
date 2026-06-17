@@ -1,27 +1,9 @@
-# Data files
-data/raw/
-data/processed/
-*.parquet
-*.csv
-
-# Environment
-.env
 __pycache__/
 *.pyc
-*.pyo
-.DS_Store
-
-# Virtual environment
-venv/
 .venv/
-
-# Logs
-logs/
-*.log
-
-# MLflow
-mlruns/
-
-# Jupyter
+venv/
+.env
 .ipynb_checkpoints/
-*.ipynb
+.DS_Store
+.streamlit/secrets.toml
+data/raw/
