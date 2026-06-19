@@ -112,6 +112,8 @@ def screen_funds(features: pd.DataFrame, profile: RiskProfile) -> pd.DataFrame:
 
     # eligibility: volatility band + computable vol + optional category whitelist
     elig = df[df["volatility"].notna()
+              & df["sharpe"].notna()        #ekledim
+              & df["max_drawdown"].notna()  #ekledim
               & (df["volatility"] >= profile.vol_min)
               & (df["volatility"] <= profile.vol_max)]
     if profile.allowed_categories is not None:

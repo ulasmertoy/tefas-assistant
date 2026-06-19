@@ -73,3 +73,24 @@ class RecommendationResponse(BaseModel):
     total_eligible: int = Field(ge=0)
     mature: list[FundRecommendation]
     young: list[FundRecommendation] = []
+
+# --------------------------------------------------------------------------- #
+# LLM explainer: TEXT-ONLY output (no numbers, on purpose)
+# --------------------------------------------------------------------------- #
+class ExplainedFund(BaseModel):
+    """The LLM's explanation for ONE fund — text only, by design. There is NO
+    numeric field here: the model physically cannot emit a Sharpe/volatility
+    value, so it cannot get one wrong. The real numbers stay in FundRecommendation;
+    the two are merged by `code`. `code` is the join key — and also lets us verify
+    the LLM didn't invent a fund that wasn't in the input."""
+    code: str
+    explanation: str = Field(min_length=1, max_length=400)  # a sentence or two, no numbers
+
+
+class ExplainedResponse(BaseModel):
+    """The full text layer the LLM returns for one recommendation set. `summary` is
+    one overall rationale for the profile; `funds` carries one ExplainedFund per fund
+    we asked it to explain. Merged with RecommendationResponse (by `code`) to build
+    the on-screen card: engine numbers on top, this text below."""
+    summary: str = Field(min_length=1, max_length=600)
+    funds: list[ExplainedFund]
