@@ -40,7 +40,7 @@ PRESETS: dict[str, RiskProfile] = {
                                 rank_by=RankBy.DRAWDOWN),
     "balanced":     RiskProfile(name="balanced",     vol_min=0.08, vol_max=0.20,
                                 rank_by=RankBy.SHARPE),
-    "aggressive":   RiskProfile(name="aggressive",   vol_min=0.15, vol_max=0.45,
+    "aggressive":   RiskProfile(name="aggressive",   vol_min=0.15, vol_max=0.55,
                                 rank_by=RankBy.SHARPE, include_young=True),
 }
 
@@ -194,12 +194,34 @@ def _to_fund(code, row) -> FundRecommendation:
         history_days=int(row["history_days"]),
     )
 
+def _high_return_flagged(features: pd.DataFrame, profile: RiskProfile,
+                         n: int = 5) -> list[FundRecommendation]:
+    """En yüksek 1y getirili n fon — volatiliteden bağımsız. Tüm evrendeki en
+    yüksek getiriler. ÖNERİ DEĞİL: 'neden en yüksek getirili fonlar önerilenlerde
+    yok?' sorusuna şeffaf cevap. Yüksek getiri çoğu zaman yüksek riskle gelir;
+    kullanıcı Sharpe ve max düşüş sütunlarından bunu görür. Sadece sayılar."""
+    df = features.copy()
+    if "category" not in df.columns:
+        df["category"] = df["title"].map(categorize)
+
+    elig = df[df["volatility"].notna()
+              & df["sharpe"].notna()
+              & df["max_drawdown"].notna()
+              & df["return_1y"].notna()
+              & (df["history_days"] >= profile.min_history_days)]
+
+    top = elig.sort_values("return_1y", ascending=False).head(n)
+    top = top.assign(league="mature", rank=range(1, len(top) + 1))
+    return [_to_fund(c, r) for c, r in top.iterrows()]
 
 def build_response(features: pd.DataFrame, profile: "str | RiskProfile" = "balanced",
                    top_n: "int | None" = None) -> RecommendationResponse:
     """Run the engine and wrap the result in the typed RecommendationResponse the
     API/agent speaks. `total_eligible` counts all funds that matched the profile
-    BEFORE the top_n trim, so a consumer can say 'showing N of total_eligible'."""
+    BEFORE the top_n trim, so a consumer can say 'showing N of total_eligible'.
+    For aggressive (include_young), also surfaces a 'high return, high risk' list:
+    funds ABOVE the volatility ceiling, sorted by 1y return — numbers only, shown
+    so the user sees the high-return funds we deliberately did NOT recommend."""
     profile = resolve_profile(profile)
     ranked = screen_funds(features, profile)
     total_eligible = len(ranked)
@@ -208,9 +230,40 @@ def build_response(features: pd.DataFrame, profile: "str | RiskProfile" = "balan
 
     mature = [_to_fund(c, r) for c, r in ranked[ranked["league"] == "mature"].iterrows()]
     young = [_to_fund(c, r) for c, r in ranked[ranked["league"] == "young"].iterrows()]
-    return RecommendationResponse(profile=profile, total_eligible=total_eligible,
-                                  mature=mature, young=young)
 
+    flagged = (_high_return_flagged(features, profile)
+               if profile.name == "aggressive" else [])
+
+    return RecommendationResponse(profile=profile, total_eligible=total_eligible,
+                                  mature=mature, young=young,
+                                  high_return_flagged=flagged)
+
+# --------------------------------------------------------------------------- #
+# UI → engine profile mappinga (app.py'den taşındı)
+# --------------------------------------------------------------------------- #
+PROFILE_LABELS = {
+    "Temkinli": "conservative",
+    "Dengeli": "balanced",
+    "Agresif": "aggressive",
+}
+
+VADE_MIN_HISTORY = {"1 yıldan kısa": 180, "1–3 yıl": 365, "3 yıl+": 365 * 3}
+
+TUR_CATEGORIES = {
+    "Farketmez": None,
+    "Katılım (faizsiz)": ["Katılım"],
+    "Hisse ağırlıklı": ["Değişken", "Hisse Senedi"],
+}
+
+
+def build_profile(risk: str, vade: str, tur: str) -> RiskProfile:
+    """3 yapılandırılmış UI cevabını tek bir deterministik RiskProfile'a çevirir."""
+    base = PRESETS[PROFILE_LABELS[risk]]
+    return base.model_copy(update={
+        "min_history_days": VADE_MIN_HISTORY[vade],
+        "allowed_categories": TUR_CATEGORIES[tur],
+        "include_young": vade == "1 yıldan kısa",
+    })
 
 # --------------------------------------------------------------------------- #
 if __name__ == "__main__":

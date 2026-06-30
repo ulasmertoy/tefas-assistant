@@ -74,9 +74,7 @@ class RecommendationResponse(BaseModel):
     mature: list[FundRecommendation]
     young: list[FundRecommendation] = []
 
-# --------------------------------------------------------------------------- #
 # LLM explainer: TEXT-ONLY output (no numbers, on purpose)
-# --------------------------------------------------------------------------- #
 class ExplainedFund(BaseModel):
     """The LLM's explanation for ONE fund — text only, by design. There is NO
     numeric field here: the model physically cannot emit a Sharpe/volatility
@@ -86,11 +84,57 @@ class ExplainedFund(BaseModel):
     code: str
     explanation: str = Field(min_length=1, max_length=400)  # a sentence or two, no numbers
 
+class RecommendRequest(BaseModel):
+    risk: Literal["Temkinli", "Dengeli", "Agresif"]
+    vade: Literal["1 yıldan kısa", "1–3 yıl", "3 yıl+"]
+    tur: Literal["Farketmez", "Katılım (faizsiz)", "Hisse ağırlıklı"]
+    user_note: str = Field(default="", max_length=500)
+    top_n: int = Field(default=5, ge=1, le=20)
 
 class ExplainedResponse(BaseModel):
     """The full text layer the LLM returns for one recommendation set. `summary` is
     one overall rationale for the profile; `funds` carries one ExplainedFund per fund
-    we asked it to explain. Merged with RecommendationResponse (by `code`) to build
-    the on-screen card: engine numbers on top, this text below."""
+    we asked it to explain. `note` is an OPTIONAL caveat — filled only when the user's
+    request conflicts with the candidates (e.g. wants low volatility but picked an
+    aggressive profile); null otherwise. Merged with RecommendationResponse (by `code`)
+    to build the on-screen card: engine numbers on top, this text below."""
     summary: str = Field(min_length=1, max_length=600)
     funds: list[ExplainedFund]
+    note: str | None = Field(default=None, max_length=400)   # çelişki/uyarı; yoksa null
+
+
+# MERGE output: engine numbers + LLM text combined (API's final response)
+class FundCard(BaseModel):
+    """The output of a fund: numbers from the engine + description from the LLM, combined via code.
+    `explanation` might be None — if the model has omitted the description for that fund."""
+    code: str
+    title: str
+    category: str
+    league: Literal["mature", "young"]
+    volatility: float
+    sharpe: float
+    max_drawdown: float
+    return_1y: float | None = None
+    explanation: str | None = None
+
+class RecommendationResult(BaseModel):
+    """Endpoint'in döndürdüğü nihai paket: genel özet + opsiyonel uyarı +
+    birleşmiş fon kartları + 'yüksek getiri, yüksek risk' vitrini (sayı-only)."""
+    summary: str
+    note: str | None = None
+    total_eligible: int = Field(ge=0)
+    cards: list[FundCard]
+    high_return_flagged: list[FundCard] = []
+
+class RecommendationResponse(BaseModel):
+    """The full answer for one profile. `mature` is the primary list; `young` is the
+    separate short-history list (non-empty only when the profile opts in — i.e.
+    aggressive). `high_return_flagged` is the 'high return, high risk' showcase:
+    funds whose volatility EXCEEDS the profile's ceiling but whose 1y return is high
+    — surfaced (numbers only, no recommendation) so the user sees why they were cut.
+    `total_eligible` is how many funds matched the profile before any top-N trim."""
+    profile: RiskProfile
+    total_eligible: int = Field(ge=0)
+    mature: list[FundRecommendation]
+    young: list[FundRecommendation] = []
+    high_return_flagged: list[FundRecommendation] = []

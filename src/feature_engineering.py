@@ -110,36 +110,13 @@ def detect_bad_days(prices: pd.Series,
 # --------------------------------------------------------------------------- #
 def load_and_clean(funds_path, max_mid_zero_ratio: float = MAX_MID_ZERO_RATIO,
                    max_daily_return: float = MAX_DAILY_RETURN):
-    """Load raw funds parquet and clean it, per fund.
-
-    Stage 1  (cut)    : keep only [first real NAV .. last real NAV]; drop the
-                        rectangular-grid placeholder rows outside that window.
-    Stage 2  (null)   : inside the active range, price == 0 -> NaN (no fake 0% return).
-    Stage 2b (repair) : NaN economically-impossible single-day prints (detect_bad_days)
-                        — a spike/near-zero that reverts, or a >100% one-day jump.
-                        The fund is KEPT; only those days are blanked, so its real
-                        history (incl. genuine dips like NBH's) survives. This
-                        replaces the old blunt "drop the whole fund on a spike" rule.
-    Stage 3  (exclude): drop the fund ONLY when it is unusable even after repair —
-                        mid_zero_ratio > max_mid_zero_ratio (GPZ: zeros so pervasive
-                        the series is untrustworthy) OR a single-day move is STILL
-                        > max_daily_return after repair (unrepairable; should be rare).
-
-    history_days = valid observations on the cleaned series (active.dropna(), after
-    both null + repair), so it speaks the same language as metrics.py's
-    len(returns.dropna()) gate (~n, not exactly n).
-
-    Returns
-    -------
-    clean : dict[str, pd.Series]  code -> cleaned date-indexed prices (survivors only)
-    meta  : pd.DataFrame (index=code)  diagnostics for every fund incl. dropped ones
-    """
+   
     df = pd.read_parquet(funds_path)
     df["date"] = pd.to_datetime(df["date"])
     titles = df.groupby("code")["title"].first()
 
-    clean: dict[str, pd.Series] = {}
-    rows = []
+    clean: dict[str, pd.Series] = {} #it gives clean math. values
+    rows = [] #it's presenting why we clean the data
 
     for code, g in df.sort_values("date").groupby("code"):
         s = g.set_index("date")["price"]
@@ -195,7 +172,6 @@ def load_and_clean(funds_path, max_mid_zero_ratio: float = MAX_MID_ZERO_RATIO,
                 int(meta["glitch_repaired"].sum()), int((meta["glitch_repaired"] > 0).sum()))
     return clean, meta
 
-
 # --------------------------------------------------------------------------- #
 # Stage 2: load risk-free table (read from disk here; metrics gets it as a param)
 # --------------------------------------------------------------------------- #
@@ -208,7 +184,6 @@ def load_rf(rf_path) -> pd.DataFrame:
     if missing:
         raise ValueError(f"rf table missing columns: {missing}")
     return rf[["date", "rate"]].sort_values("date").reset_index(drop=True)
-
 
 # --------------------------------------------------------------------------- #
 # Stage 3: build the feature table (calls pure metrics on cleaned series)
@@ -243,7 +218,6 @@ def build_features(clean: dict, meta: pd.DataFrame, rf_table: pd.DataFrame,
         }
         row.update(regime_metrics(returns, regimes, rf_daily=None))
         rows.append(row)
-
     return pd.DataFrame(rows).set_index("code")
 
 # --------------------------------------------------------------------------- #

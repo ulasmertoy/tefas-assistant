@@ -24,7 +24,6 @@ END_DATE = "18-05-2026"
 DATA_DIR = Path(__file__).parent.parent / "data"
 OUT_FILE = DATA_DIR / "raw" / "tcmb_rates.parquet"
 
-
 def fetch_policy_rate() -> pd.DataFrame:
     logger.info(f"Fetching EVDS series {SERIES_CODE} (monthly)...")
     df = get_series(SERIES_CODE, start_date=START_DATE, end_date=END_DATE,
@@ -39,7 +38,6 @@ def fetch_policy_rate() -> pd.DataFrame:
     logger.info(f"Fetched {len(df)} monthly rate points: "
                 f"{df['date'].min().date()} -> {df['date'].max().date()}")
     return df
-
 
 if __name__ == "__main__":
     df = fetch_policy_rate()

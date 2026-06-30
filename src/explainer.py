@@ -19,15 +19,15 @@ Three design pillars (each a deliberate, interview-ready choice):
 """
 import pandas as pd
 import anthropic
-
+from schemas import (RecommendationResponse, ExplainedResponse,
+                     FundCard, RecommendationResult)   
 from recommend import build_response, load_features
-from schemas import RecommendationResponse, ExplainedResponse
-
+from pydantic import ValidationError   # dosyanın başına
 
 # Sonnet = sensible default for a tool-use loop (reliable tool calls, fair price).
 # For this fairly structured task you can drop to "claude-haiku-4-5-20251001" to
 # cut cost; reach for Opus only if quality demands it.
-MODEL = "claude-sonnet-4-6"
+MODEL = "claude-haiku-4-5-20251001"
 
 from pathlib import Path
 from dotenv import load_dotenv
@@ -51,8 +51,7 @@ KRİTİK KURALLAR:
 - Açıklamalarında ASLA somut sayı yazma (Sharpe, volatilite, getiri, düşüş). \
 Niteliksel anlat: "düşük oynaklık", "güçlü riske göre getiri", "sınırlı düşüş". \
 Sayılar kullanıcıya ayrıca gösteriliyor.
-- "sıfır", "hiç", "tam" gibi kesin değer iddialarından kaçın; \
-yön/derece olarak anlat (örn. "çok sınırlı düşüş", "son derece düşük oynaklık").
+
 - Yalnızca `recommend_funds`'un döndürdüğü fonları açıkla. Fon UYDURMA.
 - Açıklamalar Türkçe olsun."""
 
@@ -105,33 +104,55 @@ def _run_recommend(tool_input: dict, features: pd.DataFrame) -> RecommendationRe
 # --------------------------------------------------------------------------- #
 # Merge: engine numbers (FundRecommendation) + LLM text (ExplainedFund), by code
 # --------------------------------------------------------------------------- #
-def merge_by_code(rec: RecommendationResponse, exp: ExplainedResponse) -> list[dict]:
-    """Join the engine's numeric funds with the LLM's text on `code`. Every number
-    is from the engine, every sentence from the LLM. An explanation whose code is
-    NOT in the engine output (a hallucination) is simply dropped — it can never
-    reach the screen."""
+def merge_by_code(rec: RecommendationResponse, exp: ExplainedResponse
+                  ) -> RecommendationResult:
+    """Engine'in sayılarını (FundRecommendation) LLM'in metniyle (ExplainedFund)
+    `code` üzerinden birleştirir. Her sayı engine'den, her cümle LLM'den. Engine
+    çıktısında OLMAYAN bir kod (hallucination) sessizce düşer — ekranı göremez."""
     text_by_code = {e.code: e.explanation for e in exp.funds}
-    cards = []
-    for fund in rec.mature + rec.young:
-        cards.append({
-            "code": fund.code, "title": fund.title, "category": fund.category,
-            "league": fund.league, "volatility": fund.volatility,
-            "sharpe": fund.sharpe, "max_drawdown": fund.max_drawdown,
-            "return_1y": fund.return_1y,
-            "explanation": text_by_code.get(fund.code),  # None if model skipped it
-        })
-    return cards
+    cards = [
+        FundCard(
+            code=fund.code,
+            title=fund.title,
+            category=fund.category,
+            league=fund.league,
+            volatility=fund.volatility,
+            sharpe=fund.sharpe,
+            max_drawdown=fund.max_drawdown,
+            return_1y=fund.return_1y,
+            explanation=text_by_code.get(fund.code),   # model atladıysa None
+        )
+        for fund in rec.mature + rec.young
+    ]
+    flagged = [
+        FundCard(
+            code=f.code, title=f.title, category=f.category, league=f.league,
+            volatility=f.volatility, sharpe=f.sharpe, max_drawdown=f.max_drawdown,
+            return_1y=f.return_1y, explanation=None,   # açıklama yok, bilerek
+        )
+        for f in rec.high_return_flagged
+    ]
+    return RecommendationResult(
+        summary=exp.summary,
+        note=exp.note,
+        total_eligible=rec.total_eligible,
+        cards=cards,
+        high_return_flagged=flagged,
+    )
 
 
 # --------------------------------------------------------------------------- #
 # Public entry point: the tool-use loop
 # --------------------------------------------------------------------------- #
-def explain(user_query: str, features: pd.DataFrame, max_turns: int = 4
+class NoToolCallError(RuntimeError):
+    """Model araç çağırmadı (çelişkili/kapsam dışı sorgu); taşıdığı metin kullanıcıya gösterilir."""
+
+def explain(user_query: str, features: pd.DataFrame, max_turns: int = 6
             ) -> "tuple[RecommendationResponse, ExplainedResponse]":
-    """Run the agentic loop for one user request: the model calls recommend_funds
-    (engine does the math), then submit_explanation (its text-only answer). We
-    drive the loop, execute the engine tool, and validate the explanation. Returns
-    BOTH the engine response (numbers) and the explanation (text)."""
+    """Agentic loop: model recommend_funds'u çağırır (motor hesaplar), sonra
+    submit_explanation'ı çağırır (sadece metin). Doğrulama başarısız olursa hatayı
+    modele geri besleyip kendini düzeltmesini sağlarız. Motor yanıtı (sayılar) +
+    açıklama (metin) birlikte döner."""
     messages = [{"role": "user", "content": user_query}]
     rec_response: "RecommendationResponse | None" = None
 
@@ -143,17 +164,12 @@ def explain(user_query: str, features: pd.DataFrame, max_turns: int = 4
 
         tool_uses = [b for b in resp.content if b.type == "tool_use"]
         if not tool_uses:
-            raise RuntimeError("Model bir araç çağırmadı; prompt'u kontrol et.")
-
-        # Terminal action: the model handed us its explanation -> validate & done.
-        for block in tool_uses:
-            if block.name == "submit_explanation":
-                if rec_response is None:
-                    raise RuntimeError("Model açıklamadan önce recommend_funds çağırmadı.")
-                return rec_response, ExplainedResponse.model_validate(block.input)
-
-        # Otherwise: run the engine tool and feed the result back.
+            text = "".join(b.text for b in resp.content if b.type == "text").strip()
+            raise NoToolCallError(text or "Model bir öneri üretmedi.")
+        
+        messages.append({"role": "assistant", "content": resp.content})
         tool_results = []
+
         for block in tool_uses:
             if block.name == "recommend_funds":
                 rec_response = _run_recommend(block.input, features)
@@ -161,20 +177,74 @@ def explain(user_query: str, features: pd.DataFrame, max_turns: int = 4
                     "type": "tool_result", "tool_use_id": block.id,
                     "content": rec_response.model_dump_json(),
                 })
-        messages.append({"role": "assistant", "content": resp.content})
+            elif block.name == "submit_explanation":
+                if rec_response is None:
+                    raise RuntimeError("Model açıklamadan önce recommend_funds çağırmadı.")
+                try:
+                    return rec_response, ExplainedResponse.model_validate(block.input)
+                except ValidationError as e:
+                    tool_results.append({
+                        "type": "tool_result", "tool_use_id": block.id,
+                        "is_error": True,
+                        "content": f"Şema hatası: {e}. submit_explanation'ı TÜM zorunlu "
+                                   f"alanlarla (özellikle 'summary') tekrar çağır.",
+                    })
+
         messages.append({"role": "user", "content": tool_results})
 
-    raise RuntimeError(f"{max_turns} turda açıklama üretilemedi.")
+    raise RuntimeError(f"{max_turns} turda geçerli açıklama üretilemedi.")
 
+# explain'in HEMEN ALTINA ekle — mevcut explain'i SİLME
 
-# --------------------------------------------------------------------------- #
-if __name__ == "__main__":
-    from pathlib import Path
-    base = Path(__file__).parent.parent / "data"
-    feats = load_features(base / "processed" / "funds_features.parquet")
+_SELECT_SYSTEM = """Sana zaten seçilmiş TEFAS fonları verilecek. Görevin bu fonları
+AÇIKLAMAK — fon seçmek/eklemek değil. Her fon için 1-2 cümlelik, neden bu risk
+profiline uygun olduğunu anlatan niteliksel bir açıklama, bir de genel bir özet üret.
+KURAL: açıklamalarda ASLA sayı yazma (Sharpe, volatilite, getiri, düşüş);
+"düşük oynaklık", "güçlü riske göre getiri" gibi niteliksel anlat. Türkçe yaz."""
 
-    rec, exp = explain("Çok risk almak istemiyorum, paramı korumak önceliğim.", feats)
-    print("ÖZET:", exp.summary, "\n")
-    for card in merge_by_code(rec, exp):
-        print(f"{card['code']}  vol={card['volatility']*100:.1f}%  Sharpe={card['sharpe']:.2f}")
-        print(f"  → {card['explanation']}\n")
+_SELECT_SYSTEM_NOTE = """Sana profil filtrelerinden geçmiş TEFAS fon adayları ve
+kullanıcının kısa bir notu verilecek. Görevin:
+- Verilen fonların TÜMÜNÜ açıkla — fon eleme/çıkarma YOK; her fon için 1-2 cümlelik
+  niteliksel açıklama yaz.
+- 'summary' alanında, kullanıcının notuna göre bu fonların ona ne kadar uyduğunu
+  değerlendir; nota en çok uyanları öne çıkar.
+- Kullanıcının notu eldeki adaylarla ÇELİŞİYORSA (ör. "yüksek getiri ama düşük
+  oynaklık" istemiş, oysa agresif profil seçtiği için tüm adaylar yüksek oynaklıklı),
+  bu çelişkiyi 'note' alanına kısa ve net yaz: kullanıcıyı uyar ve ne yapabileceğini
+  söyle (ör. "düşük oynaklık önceliğinse Dengeli ya da Temkinli profili seç").
+  Çelişki yoksa 'note' alanını boş (null) bırak.
+KURAL: hiçbir yerde sayı yazma (Sharpe, volatilite, getiri, düşüş); "düşük oynaklık",
+"güçlü riske göre getiri" gibi niteliksel anlat. Yüksek oynaklıklı bir fonu "düşük
+oynaklık" diye SUNMA — verilere sadık kal. Türkçe yaz."""
+
+def explain_selected(rec: "RecommendationResponse", user_note: str = "",
+                     max_turns: int = 3) -> "ExplainedResponse":
+    """Not boşsa: verilen fonların TÜMÜNÜ açıklar (eski davranış).
+    Not doluysa: adaylar arasından nota göre en uygunları SEÇİP açıklar."""
+    note = (user_note or "").strip()
+    if note:
+        system = _SELECT_SYSTEM_NOTE
+        user_msg = f"Kullanıcının notu: {note}\n\nAday fonlar:\n{rec.model_dump_json()}"
+    else:
+        system = _SELECT_SYSTEM
+        user_msg = "Aşağıdaki seçilmiş fonları açıkla:\n" + rec.model_dump_json()
+
+    messages = [{"role": "user", "content": user_msg}]
+    for _ in range(max_turns):
+        resp = client.messages.create(
+            model=MODEL, max_tokens=3000, system=system,
+            tools=[SUBMIT_TOOL],
+            tool_choice={"type": "tool", "name": "submit_explanation"},
+            messages=messages,
+        )
+        block = next(b for b in resp.content if b.type == "tool_use")
+        try:
+            return ExplainedResponse.model_validate(block.input)
+        except ValidationError as e:
+            messages.append({"role": "assistant", "content": resp.content})
+            messages.append({"role": "user", "content": [{
+                "type": "tool_result", "tool_use_id": block.id, "is_error": True,
+                "content": f"Şema hatası: {e}. submit_explanation'ı TÜM zorunlu "
+                           f"alanlarla (özellikle 'summary') tekrar çağır.",
+            }]})
+    raise RuntimeError(f"{max_turns} turda geçerli açıklama üretilemedi.")

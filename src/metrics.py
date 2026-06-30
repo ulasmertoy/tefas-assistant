@@ -156,16 +156,6 @@ def max_drawdown(returns: pd.Series) -> float:
     return drawdown.min()                     # the deepest dip
 
 def get_regimes() -> list[tuple[str, str, str]]:
-    """
-    Real-rate regime boundaries (v1: hardcoded, verified against TCMB rate + CPI).
-
-    Returns list of (start_date, end_date, name). To upgrade to v2 (auto-derived
-    from the real-rate series), only this function's body changes — regime_metrics
-    and everything downstream stay the same.
-
-    peak_tight and easing_but_tight are both positive-real-rate environments;
-    the split reflects the nominal-rate phase, not a real-rate sign change.
-    """
     return [
         ("2021-09-23", "2023-06-01", "negative_real"),
         ("2023-06-01", "2024-03-21", "shock_tightening"),
@@ -175,18 +165,6 @@ def get_regimes() -> list[tuple[str, str, str]]:
 
 def regime_metrics(returns: pd.Series, regimes: list = None,
                    rf_daily: pd.Series = None) -> dict:
-    """
-    Per-regime performance for one fund.
-
-    For each regime, computes annualized return and volatility using only the
-    days that fall within that regime's window. A regime with fewer than
-    MIN_REGIME_DAYS valid observations yields NaN (too short to trust).
-
-    `regimes` defaults to get_regimes(). `rf_daily` is optional — if provided,
-    a regime-conditional Sharpe is also computed.
-
-    Returns a flat dict: {'negative_real_return': ..., 'negative_real_vol': ..., ...}
-    """
     if regimes is None:
         regimes = get_regimes()
 
