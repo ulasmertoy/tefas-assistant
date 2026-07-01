@@ -7,17 +7,16 @@
     
     WORKDIR /app
     
-    # ---- Healthcheck için curl ----
+
     RUN apt-get update \
         && apt-get install -y --no-install-recommends curl \
         && rm -rf /var/lib/apt/lists/*
-    
-    # ---- Önce sadece requirements (layer cache: kod değişince
-    #      kütüphaneler yeniden kurulmaz) ----
+
+
     COPY requirements.txt .
     RUN pip install -r requirements.txt
     
-    # ---- Sonra kod ----
+
     COPY . .
     
     # ---- root yerine sınırlı kullanıcı (güvenlik best practice) ----
@@ -26,7 +25,7 @@
     
     EXPOSE 8501
     
-    # ---- Container ayakta mı diye Streamlit'in health endpoint'i ----
+
     HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
         CMD curl --fail http://localhost:8501/_stcore/health || exit 1
     
