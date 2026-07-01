@@ -2,7 +2,11 @@
 
 Ranks **852 active Turkish mutual funds** by risk profile, investment horizon, and goal, then explains each recommendation in natural language — with the numbers coming from a deterministic engine, never from the LLM.
 
-![Uploading image.png…]()
+![TEFAS Assistant demo](tefas_readme_hero.png)
+
+> User asks for low volatility + positive real returns. The engine flags a caveat instead of just complying — 1-year returns reflect that period's macro conditions, not guaranteed future performance. Below it, a per-fund explanation panel shows the LLM narrating pre-computed regime data, never generating the numbers itself.
+
+**Live demo:** *add your Streamlit Community Cloud link here*
 
 
 ---
