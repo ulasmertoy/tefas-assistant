@@ -2,7 +2,8 @@
 
 Ranks **852 active Turkish mutual funds** by risk profile, investment horizon, and goal, then explains each recommendation in natural language — with the numbers coming from a deterministic engine, never from the LLM.
 
-> **Live demo:** _add your Streamlit Community Cloud link here_
+![Uploading image.png…]()
+
 
 ---
 
