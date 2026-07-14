@@ -24,6 +24,16 @@ TUR_LABELS = ["Farketmez", "Katılım (faizsiz)", "Hisse ağırlıklı"]
 
 # API adresi. Lokalde varsayılan; Docker/deploy'da ortam değişkeniyle ezilir.
 API_URL = os.getenv("API_URL", "http://127.0.0.1:8000")
+@st.cache_resource
+def wake_backend():
+    """Sayfa ilk açıldığında backend'i uyandır (Render free tier uyku sorunu)."""
+    try:
+        requests.get(f"{API_URL}/health", timeout=3)
+    except Exception:
+        pass  # uyanmadıysa da devam et; asıl istek zaten tekrar deneyecek
+    return True
+
+wake_backend()
 
 st.set_page_config(page_title="TEFAS Fon Asistanı", page_icon="📊", layout="wide")
 
