@@ -57,6 +57,19 @@ def cards_to_table(cards: list[dict]) -> pd.DataFrame:
         "1Y Getiri %": round(c["return_1y"] * 100, 1) if c["return_1y"] is not None else None,
     } for i, c in enumerate(cards)])
 
+def _fund_details(c: dict) -> None:
+    """Expander içeriği: LLM açıklaması (varsa) + deterministik dönemsel tablo.
+    LLM çökse bile (explanation None) dönemsel tablo motordan gelir, görünür."""
+    if c["explanation"]:
+        st.write(c["explanation"])
+    regime = c.get("regime") or []
+    if regime:
+        st.caption("Dönemsel davranış")
+        st.dataframe(pd.DataFrame([{
+            "Dönem": r["label"],
+            "Getiri %": round(r["ret"] * 100, 1) if r["ret"] is not None else "veri yok",
+            "Oynaklık %": round(r["vol"] * 100, 1) if r["vol"] is not None else "veri yok",
+        } for r in regime]), hide_index=True, width="stretch")
 
 def render_cards(cards: list[dict]) -> None:
     """Önce tablo (sayılar), altında her fonun açıklaması (metin)."""
@@ -67,9 +80,9 @@ def render_cards(cards: list[dict]) -> None:
         st.subheader(f"Önerilen fonlar ({len(mature)})")
         st.dataframe(cards_to_table(mature), hide_index=True, width="stretch")
         for c in mature:
-            if c["explanation"]:
+            if c["explanation"] or c.get("regime"):
                 with st.expander(f"💬 {c['code']} — {c['title']}"):
-                    st.write(c["explanation"])
+                    _fund_details(c)
 
     if young:
         st.subheader(f"⚠️ Genç fonlar ({len(young)})")

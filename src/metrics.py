@@ -155,13 +155,59 @@ def max_drawdown(returns: pd.Series) -> float:
     drawdown = (cumulative - running_max) / running_max  # % below the peak
     return drawdown.min()                     # the deepest dip
 
+
+def max_drawdown_window(prices: pd.Series, years: float | None = None,
+                        min_days: int = MIN_OBSERVATION) -> float:
+    """
+    Maximum drawdown WITHIN a trailing window — peak-to-trough over `years`.
+
+    Why this exists alongside max_drawdown(): the plain version measures the
+    deepest dip over a fund's ENTIRE history. Placing that next to a 1-year
+    return compares two different periods — a fund's 2022 crash gets attributed
+    to a return earned in the last 12 months. This function scopes the drawdown
+    to the SAME window as cagr(prices, years), so return and risk are measured
+    over one consistent period.
+
+    Takes PRICES (not returns), to slice the window by date the same way cagr
+    does, then normalizes to the window's own starting price so the peak is the
+    window peak — not an all-time peak carried in from before the window.
+
+    years=None  -> entire valid history (matches max_drawdown's scope).
+    years=1     -> trailing 1 year (pairs with return_1y).
+
+    Returns a negative number (e.g. -0.10 = a 10% drop). NaN if the window has
+    fewer than `min_days` valid observations.
+    """
+    prices = prices.dropna()
+    if len(prices) < 2:
+        return np.nan
+
+    if years is not None:
+        start_target = prices.index.max() - pd.DateOffset(years=int(years))
+        prices = prices[prices.index >= start_target]
+
+    if len(prices) < min_days:
+        return np.nan
+
+    cumulative = prices / prices.iloc[0]      # normalize to window start
+    running_max = cumulative.cummax()
+    drawdown = (cumulative - running_max) / running_max
+    return float(drawdown.min())
+
+
 def get_regimes() -> list[tuple[str, str, str]]:
     return [
         ("2021-09-23", "2023-06-01", "negative_real"),
         ("2023-06-01", "2024-03-21", "shock_tightening"),
         ("2024-03-21", "2024-12-26", "peak_tight"),
-        ("2024-12-26", "2026-05-18", "easing_but_tight"),
+        ("2024-12-26", "2026-12-31", "easing_but_tight"),
     ]
+REGIME_LABELS = {
+    "negative_real":    "negatif reel faiz (Eyl'21–Haz'23)",
+    "shock_tightening": "şok sıkılaşma (Haz'23–Mar'24)",
+    "peak_tight":       "zirve sıkılık (Mar'24–Ara'24)",
+    "easing_but_tight": "temkinli gevşeme (Ara'24–May'26)",
+}
 
 def regime_metrics(returns: pd.Series, regimes: list = None,
                    rf_daily: pd.Series = None) -> dict:

@@ -23,6 +23,7 @@ from metrics import (
     sharpe,
     sortino,
     max_drawdown,
+    max_drawdown_window,
     get_regimes,
     regime_metrics,
 )
@@ -52,8 +53,9 @@ GLITCH_PASSES = 6              # iterate so multi-day cluster edges re-settle & 
 # (Sharpe/Sortino) have no impossible range — extreme values are a real product
 # of the high risk-free environment, so they are reported as warnings, not blocked.
 HARD_RANGES = {
-    "volatility": (0.0, 1.5),     # 0–150% annualized; >150% means corrupt data
-    "max_drawdown": (-1.0, 0.0),  # a drop, never positive, never worse than -100%
+    "volatility": (0.0, 1.5),        # 0–150% annualized; >150% means corrupt data
+    "max_drawdown": (-1.0, 0.0),     # a drop, never positive, never worse than -100%
+    "max_drawdown_1y": (-1.0, 0.0),  # same physical bound, scoped to the 1y window
 }
 RETURN_RANGE = (-1.0, 50.0)       # any CAGR/return col: can't lose >100%; 50 = bug ceiling
 
@@ -215,6 +217,9 @@ def build_features(clean: dict, meta: pd.DataFrame, rf_table: pd.DataFrame,
             "sharpe": sharpe(returns, rf_daily),
             "sortino": sortino(returns, rf_daily),
             "max_drawdown": max_drawdown(returns),
+            # 1-year drawdown: scoped to the SAME window as return_1y, so risk and
+            # return are read off one consistent period (see max_drawdown_window).
+            "max_drawdown_1y": max_drawdown_window(prices, 1),
         }
         row.update(regime_metrics(returns, regimes, rf_daily=None))
         rows.append(row)

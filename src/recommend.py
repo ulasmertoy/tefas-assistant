@@ -32,8 +32,8 @@ import pandas as pd
 # Pydantic contracts live in one place (schemas.py): the input RiskProfile and the
 # output FundRecommendation / RecommendationResponse. recommend.py is the engine +
 # the builder that turns its pandas output into those typed models.
-from schemas import RankBy, RiskProfile, FundRecommendation, RecommendationResponse
-
+from schemas import RankBy, RiskProfile, FundRecommendation, RecommendationResponse,RegimeEntry
+from metrics import get_regimes, REGIME_LABELS
 
 PRESETS: dict[str, RiskProfile] = {
     "conservative": RiskProfile(name="conservative", vol_min=0.00, vol_max=0.10,
@@ -178,6 +178,17 @@ def _num_or_none(x) -> "float | None":
     x = float(x)
     return None if math.isnan(x) else x
 
+def _regime_list(row) -> list[RegimeEntry]:
+    """Satırdaki rejim kolonlarını tipli listeye çevirir. NaN -> None (_num_or_none),
+    sıra get_regimes ile aynı, etiket REGIME_LABELS'tan."""
+    return [
+        RegimeEntry(
+            label=REGIME_LABELS[name],
+            ret=_num_or_none(row.get(f"{name}_return")),
+            vol=_num_or_none(row.get(f"{name}_vol")),
+        )
+        for _, _, name in get_regimes()
+    ]
 
 def _to_fund(code, row) -> FundRecommendation:
     """Map one ranked DataFrame row to a FundRecommendation."""
@@ -192,6 +203,7 @@ def _to_fund(code, row) -> FundRecommendation:
         max_drawdown=float(row["max_drawdown"]),
         return_1y=_num_or_none(row.get("return_1y")),
         history_days=int(row["history_days"]),
+        regime=_regime_list(row), 
     )
 
 def _high_return_flagged(features: pd.DataFrame, profile: RiskProfile,

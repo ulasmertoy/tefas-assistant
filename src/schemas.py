@@ -44,6 +44,12 @@ class RiskProfile(BaseModel):
             raise ValueError(f"vol_min ({self.vol_min}) must be < vol_max ({self.vol_max})")
         return self
 
+class RegimeEntry(BaseModel):
+    """Bir fonun tek bir piyasa dönemindeki davranışı — BETİMLEYİCİ, değer yargısı yok.
+    Sayılar motordan (regime_metrics); yeterli gözlem yoksa ret/vol None ('veri yok')."""
+    label: str
+    ret: float | None = None     # 'return' reserved -> ret
+    vol: float | None = None
 
 # --------------------------------------------------------------------------- #
 # Output: one fund, and the full response
@@ -62,7 +68,8 @@ class FundRecommendation(BaseModel):
     max_drawdown: float
     return_1y: float | None = None        # None when the fund is younger than 1y
     history_days: int = Field(ge=0)
-
+    history_days: int = Field(ge=0)
+    regime: list[RegimeEntry] = []
 
 class RecommendationResponse(BaseModel):
     """The full answer for one profile. `mature` is the primary list; `young` is the
@@ -82,7 +89,7 @@ class ExplainedFund(BaseModel):
     the two are merged by `code`. `code` is the join key — and also lets us verify
     the LLM didn't invent a fund that wasn't in the input."""
     code: str
-    explanation: str = Field(min_length=1, max_length=400)  # a sentence or two, no numbers
+    explanation: str = Field(min_length=1, max_length=500)  # a sentence or two, no numbers
 
 class RecommendRequest(BaseModel):
     risk: Literal["Temkinli", "Dengeli", "Agresif"]
@@ -116,6 +123,9 @@ class FundCard(BaseModel):
     max_drawdown: float
     return_1y: float | None = None
     explanation: str | None = None
+    explanation: str | None = None
+    regime: list[RegimeEntry] = []
+
 
 class RecommendationResult(BaseModel):
     """Endpoint'in döndürdüğü nihai paket: genel özet + opsiyonel uyarı +

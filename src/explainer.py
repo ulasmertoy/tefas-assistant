@@ -104,12 +104,20 @@ def _run_recommend(tool_input: dict, features: pd.DataFrame) -> RecommendationRe
 # --------------------------------------------------------------------------- #
 # Merge: engine numbers (FundRecommendation) + LLM text (ExplainedFund), by code
 # --------------------------------------------------------------------------- #
-def merge_by_code(rec: RecommendationResponse, exp: ExplainedResponse
+def merge_by_code(rec: RecommendationResponse, exp: "ExplainedResponse | None"
                   ) -> RecommendationResult:
     """Engine'in sayılarını (FundRecommendation) LLM'in metniyle (ExplainedFund)
     `code` üzerinden birleştirir. Her sayı engine'den, her cümle LLM'den. Engine
-    çıktısında OLMAYAN bir kod (hallucination) sessizce düşer — ekranı göremez."""
-    text_by_code = {e.code: e.explanation for e in exp.funds}
+    çıktısında OLMAYAN bir kod (hallucination) sessizce düşer — ekranı göremez.
+
+    exp None ise (LLM açıklayıcı çöktü): sayılar tam döner, açıklamalar boş kalır,
+    summary yerine sabit bir bilgilendirme metni konur. Fallback'in amacı bu."""
+    text_by_code = {e.code: e.explanation for e in exp.funds} if exp else {}
+    summary = exp.summary if exp else (
+        "Açıklama katmanı şu anda kullanılamıyor; sonuçlar yalnızca sayısal "
+        "metriklere göre listelendi."
+    )
+    note = exp.note if exp else None
     cards = [
         FundCard(
             code=fund.code,
@@ -121,6 +129,7 @@ def merge_by_code(rec: RecommendationResponse, exp: ExplainedResponse
             max_drawdown=fund.max_drawdown,
             return_1y=fund.return_1y,
             explanation=text_by_code.get(fund.code),   # model atladıysa None
+            regime=fund.regime,
         )
         for fund in rec.mature + rec.young
     ]
@@ -133,8 +142,8 @@ def merge_by_code(rec: RecommendationResponse, exp: ExplainedResponse
         for f in rec.high_return_flagged
     ]
     return RecommendationResult(
-        summary=exp.summary,
-        note=exp.note,
+        summary=summary,        # exp.summary yerine değişken
+        note=note,              # exp.note yerine değişken
         total_eligible=rec.total_eligible,
         cards=cards,
         high_return_flagged=flagged,
@@ -194,13 +203,27 @@ def explain(user_query: str, features: pd.DataFrame, max_turns: int = 6
 
     raise RuntimeError(f"{max_turns} turda geçerli açıklama üretilemedi.")
 
-# explain'in HEMEN ALTINA ekle — mevcut explain'i SİLME
+_REGIME_RULES = """
+DÖNEMSEL DAVRANIŞ (regime):
+- 'regime' alanında fonun piyasa dönemlerine göre getiri/oynaklık verisi var.
+  Anlamlı bir örüntü varsa (ör. oynaklık dönemler arası belirgin değişiyorsa) 1
+  cümleyle BETİMLE; örüntü zayıfsa veya dönemler benzer görünüyorsa hiç bahsetme.
+- Dönemler arası getiri farkını fonun BAŞARISI gibi SUNMA: o dönemde piyasanın
+  geneli aynı yöndeydi, fark büyük ölçüde piyasa koşuluydu, fonun marifeti değil.
+  "X döneminde güçlüydü" DEME; "X döneminde daha oynaktı / daha sakindi" gibi
+  betimle.
+- ret veya vol None ise ('veri yok') o dönemi yorumlama, hiç bahsetme.
+- Bu sayılar kullanıcıya AYRICA bir tabloda gösteriliyor — rakamı (örn. "%38")
+  yazıyla TEKRAR ETME, sadece örüntüyü anlat.
+- Geçmiş gözlemdir; gelecek tahmini veya ima YOK."""
+
 
 _SELECT_SYSTEM = """Sana zaten seçilmiş TEFAS fonları verilecek. Görevin bu fonları
 AÇIKLAMAK — fon seçmek/eklemek değil. Her fon için 1-2 cümlelik, neden bu risk
 profiline uygun olduğunu anlatan niteliksel bir açıklama, bir de genel bir özet üret.
 KURAL: açıklamalarda ASLA sayı yazma (Sharpe, volatilite, getiri, düşüş);
-"düşük oynaklık", "güçlü riske göre getiri" gibi niteliksel anlat. Türkçe yaz."""
+"düşük oynaklık", "güçlü riske göre getiri" gibi niteliksel anlat. Türkçe yaz.
+""" + _REGIME_RULES
 
 _SELECT_SYSTEM_NOTE = """Sana profil filtrelerinden geçmiş TEFAS fon adayları ve
 kullanıcının kısa bir notu verilecek. Görevin:
@@ -215,7 +238,8 @@ kullanıcının kısa bir notu verilecek. Görevin:
   Çelişki yoksa 'note' alanını boş (null) bırak.
 KURAL: hiçbir yerde sayı yazma (Sharpe, volatilite, getiri, düşüş); "düşük oynaklık",
 "güçlü riske göre getiri" gibi niteliksel anlat. Yüksek oynaklıklı bir fonu "düşük
-oynaklık" diye SUNMA — verilere sadık kal. Türkçe yaz."""
+oynaklık" diye SUNMA — verilere sadık kal. Türkçe yaz.
+""" + _REGIME_RULES
 
 def explain_selected(rec: "RecommendationResponse", user_note: str = "",
                      max_turns: int = 3) -> "ExplainedResponse":

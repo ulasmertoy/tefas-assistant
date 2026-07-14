@@ -7,13 +7,14 @@ import logging                          # YENİ: print yerine "ciddi" kayıt tut
 import time                             # YENİ: her isteğin kaç saniye sürdüğünü ölçmek için
 from contextlib import asynccontextmanager
 from pathlib import Path
-
 from fastapi import FastAPI, HTTPException, Depends, Request
-
+from fastapi.middleware.cors import CORSMiddleware
 from recommend import build_profile, build_response, load_features
 from explainer import explain_selected, merge_by_code
 from schemas import RecommendRequest, RecommendationResult
-
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
 
 # ── Logging kurulumu ─────────────────────────────────────────────
 # Tek satırlık temel ayar: zaman damgası + seviye + mesaj formatı.
@@ -30,7 +31,6 @@ state: dict = {}
 
 DATA_PATH = Path(__file__).parent.parent / "data" / "processed" / "funds_features.parquet"
 
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     state["features"] = load_features(DATA_PATH)            # açılışta yükle
@@ -39,9 +39,21 @@ async def lifespan(app: FastAPI):
     state.clear()                                           # kapanışta temizle
     logger.info("Sunucu kapandı, state temizlendi.")        # YENİ: kapanış kaydı
 
-
+# IP başına istek sayacı, bellekte tutulur (tek worker → paylaşım derdi yok).
+limiter = Limiter(key_func=get_remote_address)
 app = FastAPI(title="TEFAS Fund Recommender", lifespan=lifespan)
-
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:3000",     # React (Create React App) — yerel geliştirme
+        "http://localhost:5173",     # React (Vite) — yerel geliştirme
+    ],
+    allow_credentials=False,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # ── Latency middleware ───────────────────────────────────────────
 # "Middleware" = her isteğin ÖNÜNE ve ARKASINA takılan küçük bir kod.
@@ -70,28 +82,30 @@ def health():
     """Sunucu ayakta mı, veri yüklü mü?"""
     return {"status": "ok", "funds_loaded": len(state.get("features", []))}
 
-
 @app.post("/recommend")
+@limiter.limit("10/minute")                    # ← @app.post'un ALTINDA olmalı, sırası önemli
 def recommend_endpoint(
-    request: RecommendRequest,
-    features=Depends(get_features),           # YENİ: state["features"] yerine enjeksiyon
+    request: Request,                          # Starlette Request — slowapi IP'yi buradan okur, adı 'request' ZORUNLU
+    payload: RecommendRequest,                 # gövde artık 'payload'
+    features=Depends(get_features),
 ) -> RecommendationResult:
     """Üç UI cevabını alır → profil kurar → engine çalışır → LLM açıklar → MERGE."""
-    profile = build_profile(request.risk, request.vade, request.tur)
-    engine_result = build_response(features, profile, top_n=request.top_n)
+    profile = build_profile(payload.risk, payload.vade, payload.tur)
+    engine_result = build_response(features, profile, top_n=payload.top_n)
 
     if not engine_result.mature and not engine_result.young:
-        logger.warning("Profile uygun fon yok: %s", profile)  # YENİ: bağlamlı uyarı
+        logger.warning("Profile uygun fon yok: %s", profile)
         raise HTTPException(status_code=404, detail="Bu profile uygun fon bulunamadı.")
 
-    # ── LLM fallback ─────────────────────────────────────────────
+# ── LLM fallback ─────────────────────────────────────────────
     # MERGE mimarisinin özü: deterministik sayılar doğrunun kaynağı, LLM sadece süs.
     # O yüzden LLM çökse (rate limit / network / API hatası) bile sayısal öneri DÖNMELİ.
     # Kullanıcı çıplak bir 500 görmek yerine geçerli öneriyi alır; sadece açıklama prose'u eksik olur.
+
     try:
-        explained = explain_selected(engine_result, user_note=request.user_note)
+        explained = explain_selected(engine_result, user_note=payload.user_note)
     except Exception as exc:
         logger.error("LLM açıklayıcı çöktü, sayısal sonuçla devam: %s", exc)
-        explained = None                                    # prose boş, sayılar tam
+        explained = None
 
     return merge_by_code(engine_result, explained)

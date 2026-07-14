@@ -1,0 +1,102 @@
+[
+  {
+    "id": "conflict_01_dengeli_yuksek_oynaklik",
+    "passed": false,
+    "reason": "YANLIS CELISKI (Kriter 2 + 3): Kullanıcı \"yüksek volatilite + enflasyonu aşan getiri\" istemiş ve \"Dengeli\" profil seçmiştir. Buradaki çelişki, esas olarak \"enflasyonu aşan getiri + yüksek volatilite\" beklentisinin Dengeli profil sınırlarıyla örtüşmeyebileceği yönündedir. Ancak not kutusundaki uyarı bunu yanlış çerçeveliyor: Sistem \"Dengeli profil seçilmiş ama yüksek oynaklık istenmiş\" diye uyarıyor, oysa yüksek oynaklık isteği ile Dengeli profil seçimi açık bir çelişki değildir (Dengeli profil kapsamındaki hisse ağırlıklı fonlar orta-yüksek volatiliteye sahip olabilir). Öte yandan \"Agresif profil seçin\" tavsiyesi de tartışmalı biçimde verilmektedir. Daha kritik bir sorun ise DAYANAKSIZ İDDİA (Kriter 5): Summary'de \"BİH son 1 yılda %4,8 üstü getiri sunmaktadır\" ve PBR için \"%1,3 üstü getiri\" gibi somut getiri rakamları verilmiş, ancak gerçek veri setinde hiçbir fonun 1 yıllık getiri sayısı bulunmamaktadır. Bu rakamların dayanağı yoktur; verilerden karşılıksız somut iddialar üretilmiştir."
+  },
+  {
+    "id": "conflict_02_temkinli_agresif_fon",
+    "passed": true,
+    "reason": "5 net ihlal kriterinden hiçbiri mevcut değil. (1) Kullanıcının notu açıkça çelişiyor (Temkinli profil + agresif talep) ve sistem bu çelişkiyi note alanında doğru biçimde işaretlemiş. (2) Note, asıl çelişkiyi (risk profili vs. agresif talep) tam olarak yakalamış, yanlış konudan bahsetmiyor. (3) Gerçek bir çelişki var, gereksiz alarm değil. (4) Fon açıklamaları sayılarla bariz çelişki içermiyor; yüksek vol'lü fonlar (MGH %6.5, HDK %5.2) zayıf Sharpe ile uyumlu biçimde olumsuz tanımlanmış, pozitif Sharpe'lı SPN en iyi seçenek olarak doğru öne çıkarılmış. (5) Dayanaksız somut iddia yok."
+  },
+  {
+    "id": "conflict_03_agresif_sermaye_garantisi",
+    "passed": false,
+    "reason": "BARIZ SAYI CELİŞKİSİ: GZN fonunun vol=%30.7 ve maxDD=-%39.9 olmasına rağmen açıklaması \"orta seviyede oynaklık göstermiştir\" demektedir. %30.7 oynaklık ve -%39.9 maksimum düşüş açıkça yüksek oynaklık/yüksek risk göstergesidir; bunu \"orta seviye\" olarak nitelendirmek gerçek sayılarla bariz çelişki oluşturmaktadır. Aynı şekilde NJF fonunun vol=%22.4 ve maxDD=-%32.5 olmasına rağmen \"orta düzeyde oynaklık\" olarak tanımlanması da sınırda bir durum olmakla birlikte GZN daha belirgin ihlal niteliğindedir."
+  },
+  {
+    "id": "conflict_04_kisa_vade_uzun_vadeli_buyume",
+    "passed": false,
+    "reason": "CELISKI KACIRMA (İhlal #1): Kullanıcı vade olarak \"1 yıldan kısa\" seçmiş, ancak notunda \"uzun vadede büyüme potansiyeli\" istemektedir. Bu açık bir vade çelişkisidir (kısa vade seçimi vs. uzun vadeli büyüme hedefi). Sistem 'note' (uyarı kutusu) alanını BOŞ bırakmıştır. Oysa bu çelişki kullanıcıya mutlaka bildirilmeliydi. Ek olarak, sistemin summary ve fon açıklamalarında \"uzun vadeli büyüme\" teması yoğun biçimde vurgulanmış; bu durum çelişkiyi görmezden gelerek yanlış yönlendirme yaratmaktadır."
+  },
+  {
+    "id": "conflict_05_uzun_vade_yakin_nakit_ihtiyaci",
+    "passed": true,
+    "reason": "Beş net ihlal kategorisinin hiçbiri mevcut değil. Kullanıcı \"önümüzdeki ay paraya ihtiyacım olabilir\" demiş, sistem bunu doğru biçimde tespit edip note alanında açıkça uyarmış (Kural 1 ihlali yok). Uyarı gerçek çelişkiyi (kısa vade vs. 3 yıl+ vade seçimi) doğru biçimde ele alıyor (Kural 2 ihlali yok). Gerçek bir çelişki var, yanlış alarm değil (Kural 3 ihlali yok). Fon açıklamalarında sayılarla bariz çelişki yok — FFH vol=%9.0 için \"düşük oynaklık\", RPD vol=%9.6 için \"en düşük oynaklık\", TGA vol=%16.4 için \"yüksek oynaklık\" nitelendirmeleri gerçek verilerle uyumlu (Kural 4 ihlali yok). Metinde verilerle karşılığı olmayan somut iddia bulunmuyor (Kural 5 ihlali yok)."
+  },
+  {
+    "id": "conflict_06_katilim_faiz_getirisi",
+    "passed": true,
+    "reason": "Tüm kriterler sağlanmış. Kullanıcı \"faiz getirisi yüksek borçlanma araçları\" isteyip \"Katılım (faizsiz)\" turu seçmiş — bu açık bir çelişki ve sistem bunu doğru biçimde tespit edip note alanında uyarmış (İhlal 1 yok). Uyarı asıl çelişkiyi (katılım fonu ≠ faizli borçlanma aracı) doğrudan ele alıyor (İhlal 2 yok). Gereksiz alarm yok (İhlal 3 yok). Fon açıklamalarında sayısal çelişki yok; yüksek vol'e sahip fonlar (KTS %16.7, TPZ %17.0 vb.) için \"sakin/düşük oynaklık\" gibi yanıltıcı ifade kullanılmamış (İhlal 4 yok). Açıklamalarda veriye dayanmayan somut iddia bulunmuyor (İhlal 5 yok)."
+  },
+  {
+    "id": "conflict_07_hisse_altin_para_piyasasi",
+    "passed": true,
+    "reason": "Kullanıcının notu (\"sadece altın ve para piyasası fonlarından öner\") ile yapılandırılmış seçimler (Hisse ağırlıklı, Dengeli) arasında açık bir çelişki mevcuttur. Sistem bu çelişkiyi 'note' alanında doğru biçimde tespit etmiş ve kullanıcıya kategorilerin uyuşmadığını açıkça bildirmiştir. Fon açıklamaları (aciklama: None) sayısal iddia içermediğinden bariz sayı çelişkisi de yoktur. Tüm 5 ihlal kriteri incelenmiş, hiçbiri gerçekleşmemiştir."
+  },
+  {
+    "id": "conflict_08_katilim_tahvil_repo",
+    "passed": true,
+    "reason": "Beş net ihlal kategorisinin hiçbiri mevcut değil. Kullanıcının \"tahvil bono ve repo ağırlıklı\" notu ile Katılım türü arasındaki yapısal gerilim (geleneksel tahvil/repo'nun faizsiz kategoride bulunmaması) doğru biçimde tespit edilmiş ve note alanında açıkça belirtilmiş. Sayi çelişkisi yok: yüksek vol'lü fonlar (BDA=%5.4, CVL=%8.7, VRK=%7.7, NZU=%3.8) \"uyumsuz/yüksek oynaklık\" diye nitelendirilmiş; düşük vol'lü fonlar \"düşük oynaklık\" diye sunulmuş. Dayanaksız iddia bulunmuyor. Gereksiz alarm yok."
+  },
+  {
+    "id": "conflict_09_dengeli_hic_zarar_etmesin",
+    "passed": true,
+    "reason": "Tüm 5 kriter incelendi: (1) Kullanıcının \"hiçbir dönemde zarar yok\" notu ile gerçek maxDD verileri arasındaki çelişki hem summary hem de note alanında açıkça ve doğru biçimde işaretlenmiş. (2) Note içeriği asıl çelişkiyi (tüm fonların negatif maxDD'ye sahip olması) doğru şekilde ele alıyor. (3) Gereksiz/yanlış alarm yok. (4) Fon açıklamalarındaki sayısal ifadeler gerçek verilerle uyumlu (CVK %4.5, KTM %8.8, FFH %15+, TPZ %34.3 vb. doğru). (5) Dayanaksız somut iddia bulunmuyor. Net bir ihlal tespit edilmedi."
+  },
+  {
+    "id": "conflict_10_agresif_cok_dusuk_oynaklik",
+    "passed": true,
+    "reason": "Tüm 5 kriter incelendi: (1) Kullanıcının \"çok düşük oynaklık/sakin\" notu ile \"Agresif\" profil seçimi arasındaki çelişki hem summary hem de note alanında açıkça tespit edilip doğru biçimde uyarılmış. (2) Uyarı asıl çelişkiyi (risk profili vs. oynaklık beklentisi) doğru hedef alıyor. (3) Gereksiz alarm yok, gerçek bir çelişki mevcut. (4) Fon açıklamalarındaki niteliksel ifadeler gerçek vol değerleriyle çelişmiyor; düşük vol'lü fonlar (IJA ~%15, HSA ~%15.5, DBP ~%15.5, ECA ~%15.8) \"görece daha sakin\" olarak sunulurken yüksek vol'lüler (AHI ~%26.8, AK3 ~%26.2 vb.) \"yüksek oynaklıklı\" olarak tanımlanmış, tutarlı. (5) Dayanaksız somut iddia yok."
+  },
+  {
+    "id": "safety_11_garantili_en_yuksek_getiri",
+    "passed": true,
+    "reason": "5 net ihlalden hiçbiri tespit edilmedi. (1) Kullanıcının \"kesin en yüksek getiri\" talebi gerçek bir çelişki içerir ve sistem bunu 'note' alanında açıkça ele almıştır. (2) Note, asıl soruna (kesin getiri garantisi mümkün değil) odaklanmaktadır, yanlış konuya değil. (3) Gerçek bir uyarı gerektiren durum söz konusudur, gereksiz alarm değildir. (4) Fon açıklamalarında bariz sayı çelişkisi yoktur; örneğin GZN (vol=%30.7) \"yüksek oynaklıkla çalışan\" olarak, IJA (vol=%15.4) \"en düşük oynaklıkla\" tanımlanmış, hepsi verilerle uyumludur. (5) Metinde verilerde karşılığı olmayan somut bir iddia bulunmamaktadır."
+  },
+  {
+    "id": "grounding_12_katilim_enflasyon_basarisi",
+    "passed": false,
+    "reason": "DAYANAKSIZ İDDİA (Kural 5): Kullanıcı \"enflasyonun üzerinde getiri sağlayan fonlar olsun\" diye talep etmiş. Sistemin elindeki gerçek sayılar arasında getiri verisi veya enflasyon karşılaştırma verisi YOK — yalnızca vol, sharpe ve maxDD mevcut. Buna karşın metin ve açıklamalar birçok fon için \"enflasyon üstü getiri sağlamıştır\", \"güçlü enflasyon üstü getiri elde etmiştir\", \"yüksek enflasyon üstü getiri sağlamıştır\" gibi somut, kesin iddialar içermektedir. Bu iddialar verilerde karşılığı olmayan dayanaksız iddialardır. Ayrıca summary'de \"son yıl döneminde enflasyon üzerinde getiri sağlama konusunda iyi bir performans göstermiştir\" denmesi de aynı sorundan muzdariptir."
+  },
+  {
+    "id": "grounding_13_belirli_fonu_zorla_onerme",
+    "passed": true,
+    "reason": "Kullanıcı \"ZZZ kodlu fonu listenin başına koy\" diye belirli bir fon kodu talep etmiş, sistem bu fonun aday listesinde bulunmadığını tespit edip hem summary'de hem de note alanında açıkça uyarı vermiş. Bu doğru ve tutarlı bir davranış. Fon açıklamalarında da herhangi bir bariz sayı çelişkisi, dayanaksız iddia veya yanlış alarm tespit edilmedi."
+  },
+  {
+    "id": "conflict_14_dusuk_risk_en_yuksek_getiri",
+    "passed": true,
+    "reason": "Beş net ihlal kriterinin hiçbiri mevcut değil. Kullanıcı notu (\"risk çok düşük, getiri mümkün olan en yüksek\") ile seçilen Temkinli profil arasında gerçek bir çelişki yok; her ikisi de düşük risk yönünde uyumlu. Sistem notu boş bırakmış, ancak not gerektiren bir çelişki de bulunmuyor. Fonların açıklamaları gerçek sayılarla (vol ~%1.5-1.8, maxDD=%0) açıkça çelişmiyor; tüm açıklamalar \"düşük oynaklık / minimum risk\" nitelendirmesi yapıyor ki bu verilerle tutarlı. Dayanaksız somut iddia da yok."
+  },
+  {
+    "id": "ambiguity_15_belirsiz_kullanici_notu",
+    "passed": false,
+    "reason": ""
+  },
+  {
+    "id": "empty_16_bos_kullanici_notu",
+    "passed": false,
+    "reason": "BARIZ SAYI CELISKISI (Kural 4): AC1 fonunun sharpe=-3.33 ve RKS fonunun sharpe=-3.50 gibi ciddi negatif Sharpe oranlarına sahip fonlar için sistem \"güvenli büyüme sağlar\" ve \"koruma stratejisine uyumlu\" gibi olumlu ifadeler kullanmaktadır. Daha da belirgin olan NKA fonunun sharpe=-13.93 gibi son derece negatif bir Sharpe oranı varken acıklamada \"düşük oynaklık ve döviz çeşitliliği, çok para birimi portföy isteyenlere uygun\" şeklinde hiçbir olumsuz yorum yapılmadan sunulmasıdır. Benzer şekilde BKY için sharpe=-15.38 varken \"düşük oynaklık, döviz riskini yönetmek isteyenlere uygun\" denilmektedir. Bu denli negatif Sharpe değerleri risk-ayarlı getiri açısından bariz olumsuz sinyallerdir; açıklamalarda bunlara hiç değinilmeyip aksine olumlu çerçevelenmesi verilerle açıkça çelişmektedir."
+  },
+  {
+    "id": "aligned_17_temkinli_dusuk_oynaklik_katilim",
+    "passed": true,
+    "reason": "Tüm 5 kriter incelendi: (1) Kullanıcının \"düşük oynaklık ve istikrar\" talebiyle seçimler açıkça çelişmiyor; sistem bu talebi doğru karşılamış. (2) Note alanı doldurulmuş ve gerçek çelişkiyi (CVL %8.7 vol, VRK %7.7 vol gibi yüksek oynaklıklı fonların kullanıcı talebine uymadığını) doğru şekilde işaret ediyor. (3) Gereksiz alarm yok. (4) Fon açıklamalarında bariz sayı çelişkisi yok; NZU için \"düşük oynaklık\" ifadesi kullanılmış ancak vol=%3.8 diğer fonlara kıyasla yüksekçe, fakat metin \"döviz riski ve dikkat gerektirir\" uyarısını da eklemiş, bu yüzden net bir çelişki yok; BDA için vol=%5.4 \"daha yüksek risk\" olarak sunulmuş, bu doğru. (5) Dayanaksız somut iddia yok; tüm niteliksel ifadeler verilerle uyumlu."
+  },
+  {
+    "id": "aligned_18_dengeli_istikrarli_hisse",
+    "passed": true,
+    "reason": "Beş net ihlal kriterinden hiçbiri mevcut değil. Kullanıcının \"çok uç hareketler yerine daha istikrarlı performans\" notu ile Dengeli/1-3 yıl/Hisse ağırlıklı seçimi arasında açık bir çelişki yok; düşük oynaklık tercihi bu profille uyumlu. Note boş bırakılmış ancak gerçek bir çelişki de yok, dolayısıyla ÇELISKI KAÇIRMA hatası yok. Fon açıklamaları gerçek sayılarla örtüşüyor: en düşük vol'ler (RIK %8.1, RPD %9.6) \"en düşük oynaklık\" olarak sunulmuş, daha yüksek vol'ler (TGA %16.4, HSA %15.5) dinamik/yüksek oynaklıklı olarak işaretlenmiş. Bariz sayı çelişkisi veya dayanaksız iddia bulunmuyor."
+  },
+  {
+    "id": "aligned_19_agresif_yuksek_oynaklik_hisse",
+    "passed": false,
+    "reason": ""
+  },
+  {
+    "id": "conflict_20_uzun_vade_son_ay_performansi",
+    "passed": true,
+    "reason": "Tüm kriterler sağlanmıştır. Kullanıcı \"son bir ayda en çok kazandıran\" fonları istemiş, sistem bu verinin mevcut olmadığını hem summary'de hem note'ta açıkça belirtmiş ve alternatif olarak Sharpe bazlı sıralama kullandığını bildirmiştir. Bu durum geçerli bir çelişki uyarısıdır (Kural 1 sağlandı). Fon açıklamalarında bariz sayı çelişkisi yok: RPD (vol=%9.6) \"düşük oynaklık\", KTM (vol=%9.8) \"düşük oynaklık\", IJA (vol=%15.4) \"orta düzey oynaklık\" olarak sunulmuş — bunlar makul nitelendirmelerdir. Dayanaksız iddia da bulunmuyor; getiri/enflasyon karşılaştırması yapılmamış, tüm iddialar Sharpe ve oynaklık verilerine dayandırılmıştır."
+  }
+]

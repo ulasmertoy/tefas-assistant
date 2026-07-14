@@ -10,3 +10,16 @@ data/raw/
 src/lab.py
 src/firstapi.py
 src/feture.py
+
+# ASELSAN reversal side project (bu repoya ait değil)
+asels.csv
+reversal_sonuc.png
+reversal_tani.png
+src/bist_panel.csv
+src/xsec_equity.png
+src/deneyelim.py
+src/deneyelim2.py
+src/deneyelim3.ipynb
+data/processed/quick_check.csv
+docker-deneme/
+evals/denemeapisi.py

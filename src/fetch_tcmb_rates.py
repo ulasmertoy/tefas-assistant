@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 
 SERIES_CODE = "TP.APIFON4"   # TCMB weighted-average cost of funding (effective policy rate)
 START_DATE = "01-05-2021"
-END_DATE = "18-05-2026"
+END_DATE = "10-07-2026"
 
 DATA_DIR = Path(__file__).parent.parent / "data"
 OUT_FILE = DATA_DIR / "raw" / "tcmb_rates.parquet"
