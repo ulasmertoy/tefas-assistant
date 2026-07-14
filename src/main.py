@@ -47,9 +47,11 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
-        "http://localhost:3000",     # React (Create React App) — yerel geliştirme
+        "http://localhost:3000",     # React (CRA) — yerel geliştirme
         "http://localhost:5173",     # React (Vite) — yerel geliştirme
+        "http://localhost:8501",     # Streamlit — yerel geliştirme
     ],
+    allow_origin_regex=r"https://.*\.streamlit\.app",   # Streamlit Cloud
     allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
