@@ -194,7 +194,7 @@ with st.form("oneri"):
         vade = st.radio("2) Yatırım vaden?", VADE_LABELS, index=1, horizontal=True)
     with col2:
         tur = st.radio("3) Fon türü tercihin?", TUR_LABELS, horizontal=True)
-        top_n = st.slider("Kaç aday taransın?", 5, 30, 12)
+        top_n = st.slider("Kaç aday taransın?", 3, 10, 5)
 
     user_note = st.text_area(
         "4) İstersen bir cümle ekle — neyi önemsiyorsun? (boş bırakabilirsin)",
