@@ -66,8 +66,11 @@ class FundRecommendation(BaseModel):
     volatility: float = Field(ge=0.0)
     sharpe: float
     max_drawdown: float
+    return_1m: float | None = None        # trailing simple returns, NOT annualized
+    return_3m: float | None = None
+    return_6m: float | None = None
+    return_ytd: float | None = None       # yılbaşından bugüne
     return_1y: float | None = None        # None when the fund is younger than 1y
-    history_days: int = Field(ge=0)
     history_days: int = Field(ge=0)
     regime: list[RegimeEntry] = []
 
@@ -121,8 +124,11 @@ class FundCard(BaseModel):
     volatility: float
     sharpe: float
     max_drawdown: float
+    return_1m: float | None = None
+    return_3m: float | None = None
+    return_6m: float | None = None
+    return_ytd: float | None = None
     return_1y: float | None = None
-    explanation: str | None = None
     explanation: str | None = None
     regime: list[RegimeEntry] = []
 

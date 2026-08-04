@@ -15,6 +15,7 @@ import os
 import pandas as pd
 import requests
 import streamlit as st
+import plotly.graph_objects as go
 
 # Form etiketleri saf veri (motor değil), istemcide kalabilir.
 # recommend.py içindeki sözlüklerle BİREBİR aynı anahtarlar olmalı.
@@ -64,14 +65,29 @@ def cards_to_table(cards: list[dict]) -> pd.DataFrame:
         "Vol %": round(c["volatility"] * 100, 1),
         "Sharpe": round(c["sharpe"], 2),
         "Max Düşüş %": round(c["max_drawdown"] * 100, 1),
+        "1A %": round(c["return_1m"] * 100, 1) if c.get("return_1m") is not None else None,
+        "3A %": round(c["return_3m"] * 100, 1) if c.get("return_3m") is not None else None,
+        "6A %": round(c["return_6m"] * 100, 1) if c.get("return_6m") is not None else None,
+        "YBB %": round(c["return_ytd"] * 100, 1) if c.get("return_ytd") is not None else None,
         "1Y Getiri %": round(c["return_1y"] * 100, 1) if c["return_1y"] is not None else None,
     } for i, c in enumerate(cards)])
 
 def _fund_details(c: dict) -> None:
-    """Expander içeriği: LLM açıklaması (varsa) + deterministik dönemsel tablo.
-    LLM çökse bile (explanation None) dönemsel tablo motordan gelir, görünür."""
+    """Expander içeriği: LLM açıklaması (varsa) + standart periyot getirileri +
+    deterministik dönemsel (rejim) tablo. LLM çökse bile (explanation None) her
+    ikisi de motordan gelir, görünür."""
     if c["explanation"]:
         st.write(c["explanation"])
+
+    st.caption("Standart getiriler")
+    st.dataframe(pd.DataFrame([{
+        "Periyot": label,
+        "Getiri %": round(c[key] * 100, 1) if c.get(key) is not None else "veri yok",
+    } for label, key in [
+        ("1 Ay", "return_1m"), ("3 Ay", "return_3m"), ("6 Ay", "return_6m"),
+        ("Yılbaşından bugüne", "return_ytd"), ("1 Yıl", "return_1y"),
+    ]]), hide_index=True, width="stretch")
+
     regime = c.get("regime") or []
     if regime:
         st.caption("Dönemsel davranış")
@@ -80,6 +96,51 @@ def _fund_details(c: dict) -> None:
             "Getiri %": round(r["ret"] * 100, 1) if r["ret"] is not None else "veri yok",
             "Oynaklık %": round(r["vol"] * 100, 1) if r["vol"] is not None else "veri yok",
         } for r in regime]), hide_index=True, width="stretch")
+
+def render_metrics(cards: list[dict], total_eligible: int) -> None:
+    """Önerilen fonların özet metrikleri: 4 kart halinde üst şerit."""
+    mature = [c for c in cards if c["league"] == "mature"]
+    pool = mature or cards
+    if not pool:
+        return
+    avg_sharpe = sum(c["sharpe"] for c in pool) / len(pool)
+    avg_vol = sum(c["volatility"] for c in pool) / len(pool)
+    avg_dd = sum(c["max_drawdown"] for c in pool) / len(pool)
+    k1, k2, k3, k4 = st.columns(4)
+    k1.metric("Taranan fon", f"{total_eligible}")
+    k2.metric("Ortalama Sharpe", f"{avg_sharpe:.2f}")
+    k3.metric("Ortalama oynaklık", f"%{avg_vol * 100:.1f}")
+    k4.metric("Ortalama max düşüş", f"%{abs(avg_dd) * 100:.1f}")
+
+
+def render_scatter(cards: list[dict], flagged: list[dict]) -> None:
+    """Risk-getiri saçılımı: x=oynaklık, y=1y getiri."""
+    def _points(items):
+        xs, ys, txt = [], [], []
+        for c in items:
+            if c["return_1y"] is None:
+                continue
+            xs.append(c["volatility"] * 100)
+            ys.append(c["return_1y"] * 100)
+            txt.append(f"{c['code']} — {c['title']}<br>Sharpe: {c['sharpe']:.2f} · Max düşüş: %{c['max_drawdown']*100:.1f}")
+        return xs, ys, txt
+    fig = go.Figure()
+    mx, my, mt = _points(cards)  # tüm önerilenler (mature + young)
+    fig.add_trace(go.Scatter(x=mx, y=my, mode="markers", name="Önerilen",
+        marker=dict(size=13, color="#E8B339", line=dict(width=1, color="#0F1419")),
+        text=mt, hovertemplate="%{text}<br>Oynaklık: %{x:.1f}%<br>Getiri: %{y:.1f}%<extra></extra>"))
+    if flagged:
+        fx, fy, ft = _points(flagged)
+        fig.add_trace(go.Scatter(x=fx, y=fy, mode="markers", name="Yüksek risk",
+            marker=dict(size=13, color="#D9534F", symbol="diamond", line=dict(width=1, color="#0F1419")),
+            text=ft, hovertemplate="%{text}<br>Oynaklık: %{x:.1f}%<br>Getiri: %{y:.1f}%<extra></extra>"))
+    fig.update_layout(title="Risk – Getiri Dağılımı",
+        xaxis_title="Oynaklık (%)  →  daha riskli", yaxis_title="1 yıllık getiri (%)",
+        plot_bgcolor="#0F1419", paper_bgcolor="#0F1419", font=dict(color="#E6E9ED"),
+        xaxis=dict(gridcolor="#2A333D"), yaxis=dict(gridcolor="#2A333D"),
+        legend=dict(bgcolor="rgba(0,0,0,0)"), height=420, margin=dict(t=50, b=50))
+    st.plotly_chart(fig, use_container_width=True)
+
 
 def render_cards(cards: list[dict]) -> None:
     """Önce tablo (sayılar), altında her fonun açıklaması (metin)."""
@@ -163,12 +224,16 @@ if submitted:
                      f"(`{API_URL}`).")
             st.stop()
 
+    flagged = result.get("high_return_flagged", [])
+    render_metrics(result["cards"], result.get("total_eligible", 0))
+    st.divider()
     if result["summary"]:
         st.markdown(result["summary"])
     if result["note"]:          # çelişki/uyarı varsa sarı kutuda öne çıkar
         st.warning(result["note"])
+    render_scatter(result["cards"], flagged)
     render_cards(result["cards"])
-    render_flagged(result.get("high_return_flagged", []))
+    render_flagged(flagged)
 
 
 # --------------------------------------------------------------- footer ---- #

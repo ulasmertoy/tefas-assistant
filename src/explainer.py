@@ -127,6 +127,10 @@ def merge_by_code(rec: RecommendationResponse, exp: "ExplainedResponse | None"
             volatility=fund.volatility,
             sharpe=fund.sharpe,
             max_drawdown=fund.max_drawdown,
+            return_1m=fund.return_1m,
+            return_3m=fund.return_3m,
+            return_6m=fund.return_6m,
+            return_ytd=fund.return_ytd,
             return_1y=fund.return_1y,
             explanation=text_by_code.get(fund.code),   # model atladıysa None
             regime=fund.regime,
@@ -137,7 +141,9 @@ def merge_by_code(rec: RecommendationResponse, exp: "ExplainedResponse | None"
         FundCard(
             code=f.code, title=f.title, category=f.category, league=f.league,
             volatility=f.volatility, sharpe=f.sharpe, max_drawdown=f.max_drawdown,
-            return_1y=f.return_1y, explanation=None,   # açıklama yok, bilerek
+            return_1m=f.return_1m, return_3m=f.return_3m, return_6m=f.return_6m,
+            return_ytd=f.return_ytd, return_1y=f.return_1y,
+            explanation=None,   # açıklama yok, bilerek
         )
         for f in rec.high_return_flagged
     ]

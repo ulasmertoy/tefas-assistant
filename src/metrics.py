@@ -195,6 +195,64 @@ def max_drawdown_window(prices: pd.Series, years: float | None = None,
     return float(drawdown.min())
 
 
+PERIOD_WINDOWS = {
+    "1A": pd.DateOffset(months=1),
+    "3A": pd.DateOffset(months=3),
+    "6A": pd.DateOffset(months=6),
+    "1Y": pd.DateOffset(years=1),
+}
+
+
+def period_returns(prices: pd.Series) -> dict:
+    """
+    Standard trailing-period simple returns: 1A, 3A, 6A, 1Y, and YBB (year-to-date).
+
+    Why this exists alongside cagr(): cagr() annualizes — it answers "what rate
+    would this compound at over a year". That's the wrong question for a 1-month
+    or 3-month window (a 2% move in 30 days is not "24% annualized" in any
+    meaningful sense to a user comparing funds today). period_returns() answers
+    the simpler question users actually ask first: "what has this fund actually
+    done in the last N", as a plain cumulative return, no annualization.
+
+    For each window, the start price is the nearest available price ON OR BEFORE
+    the target date (same "nearest earlier price" rule cagr() uses for its
+    trailing-window mode), so gaps/holidays don't break the calculation.
+
+    YBB (yılbaşından bugüne / year-to-date): start price is the nearest price on
+    or before December 31 of the previous year.
+
+    Returns a dict, e.g. {"1A": 0.021, "3A": 0.084, "6A": 0.041, "1Y": 0.452,
+    "YBB": 0.118}. Any window the fund is too young for (or missing data around
+    the target date) is NaN — never silently dropped, so the caller can render
+    "veri yok" explicitly instead of a blank cell.
+    """
+    prices = prices.dropna()
+    if len(prices) < 2:
+        return {**{k: np.nan for k in PERIOD_WINDOWS}, "YBB": np.nan}
+
+    end_price = prices.iloc[-1]
+    end_date = prices.index.max()
+
+    result = {}
+    for label, offset in PERIOD_WINDOWS.items():
+        start_target = end_date - offset
+        past = prices[prices.index <= start_target]
+        if past.empty:
+            result[label] = np.nan
+            continue
+        start_price = past.iloc[-1]
+        result[label] = np.nan if start_price <= 0 else (end_price / start_price - 1)
+
+    ytd_target = pd.Timestamp(year=end_date.year - 1, month=12, day=31)
+    past_ytd = prices[prices.index <= ytd_target]
+    if past_ytd.empty or past_ytd.iloc[-1] <= 0:
+        result["YBB"] = np.nan
+    else:
+        result["YBB"] = end_price / past_ytd.iloc[-1] - 1
+
+    return result
+
+
 def get_regimes() -> list[tuple[str, str, str]]:
     return [
         ("2021-09-23", "2023-06-01", "negative_real"),

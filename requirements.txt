@@ -8,3 +8,4 @@ pydantic==2.13.4
 streamlit
 python-dotenv==1.2.2
 slowapi==0.1.10
+plotly>=5.20

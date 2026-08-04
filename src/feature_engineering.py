@@ -26,6 +26,7 @@ from metrics import (
     max_drawdown_window,
     get_regimes,
     regime_metrics,
+    period_returns,
 )
 
 logger = logging.getLogger(__name__)
@@ -204,11 +205,21 @@ def build_features(clean: dict, meta: pd.DataFrame, rf_table: pd.DataFrame,
         returns = daily_returns(prices)
         rf_daily = risk_free_series(returns.index, rf_table)
 
+        # Kısa vadeli, ANNUALİZE EDİLMEMİŞ getiriler (1A/3A/6A/YBB). return_1y ile
+        # karışmasın: return_1y cagr(prices,1)'den gelir (1 yıllık pencerede
+        # annualize etmek zaten basit getiriyle örtüşür), o yüzden period_returns'ün
+        # "1Y" anahtarı burada KASITLI olarak kullanılmıyor -- tekrar olurdu.
+        periods = period_returns(prices)
+
         row = {
             "code": code,
             "title": meta.loc[code, "title"],
             "history_days": history_days,
             "league": "young" if history_days < YOUNG_LEAGUE_MAX_DAYS else "mature",
+            "return_1m": periods["1A"],
+            "return_3m": periods["3A"],
+            "return_6m": periods["6A"],
+            "return_ytd": periods["YBB"],
             "return_1y": cagr(prices, 1),
             "return_2y": cagr(prices, 2),
             "return_4y": cagr(prices, 4),
