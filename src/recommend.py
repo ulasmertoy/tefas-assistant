@@ -33,7 +33,7 @@ import pandas as pd
 # output FundRecommendation / RecommendationResponse. recommend.py is the engine +
 # the builder that turns its pandas output into those typed models.
 from schemas import RankBy, RiskProfile, FundRecommendation, RecommendationResponse,RegimeEntry
-from metrics import get_regimes, REGIME_LABELS
+from metrics import get_regimes, regime_labels
 
 PRESETS: dict[str, RiskProfile] = {
     "conservative": RiskProfile(name="conservative", vol_min=0.00, vol_max=0.10,
@@ -179,15 +179,21 @@ def _num_or_none(x) -> "float | None":
     return None if math.isnan(x) else x
 
 def _regime_list(row) -> list[RegimeEntry]:
-    """Satırdaki rejim kolonlarını tipli listeye çevirir. NaN -> None (_num_or_none),
-    sıra get_regimes ile aynı, etiket REGIME_LABELS'tan."""
+    """Satırdaki rejim kolonlarını tipli listeye çevirir. NaN -> None (_num_or_none).
+
+    Etiket ve sıra, feature tablosunun `data_end` değerinden türetilir — yani
+    metriklerin hesaplandığı veri sonundan. Duvar saatine bakmıyoruz: parquet
+    dün üretildiyse etiket de dünü göstermeli, bugünü değil.
+    """
+    data_end = row.get("data_end")          # eski parquet'lerde yoksa bugüne düşer
+    labels = regime_labels(data_end)
     return [
         RegimeEntry(
-            label=REGIME_LABELS[name],
+            label=labels[name],
             ret=_num_or_none(row.get(f"{name}_return")),
             vol=_num_or_none(row.get(f"{name}_vol")),
         )
-        for _, _, name in get_regimes()
+        for _, _, name in get_regimes(data_end)
     ]
 
 def _to_fund(code, row) -> FundRecommendation:

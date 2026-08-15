@@ -253,19 +253,65 @@ def period_returns(prices: pd.Series) -> dict:
     return result
 
 
-def get_regimes() -> list[tuple[str, str, str]]:
+# --------------------------------------------------------------------------- #
+# Piyasa rejimleri
+#
+# Son rejimin bitişi SABİT DEĞİL — veriden gelir. Eskiden "2026-12-31" yazıyordu
+# ve etiketi "Ara'24–May'26" idi; donmuş veride bu doğruydu, canlı veride ikisi
+# de yanlış. Veri ilerledikçe etiket geride kalıyordu ve explainer.py o etiketi
+# okuyup kullanıcıya yanlış tarih aralığı söylüyordu. 2026 sonunu geçtiğimizde
+# ise yeni günler hiçbir rejime düşmeyecek, sessizce tablodan kaybolacaktı.
+#
+# Asıl tasarım hatası şuydu: sınırlar bir yerde, etiketler başka yerde elle
+# yazılmıştı. Bağımsız oldukları için ayrışabiliyorlardı. Artık etiket
+# sınırlardan TÜRETİLİYOR — ikisi yapısal olarak ayrışamaz.
+# --------------------------------------------------------------------------- #
+_MONTHS_TR = {1: "Oca", 2: "Şub", 3: "Mar", 4: "Nis", 5: "May", 6: "Haz",
+              7: "Tem", 8: "Ağu", 9: "Eyl", 10: "Eki", 11: "Kas", 12: "Ara"}
+
+_REGIME_NAMES = {
+    "negative_real":    "negatif reel faiz",
+    "shock_tightening": "şok sıkılaşma",
+    "peak_tight":       "zirve sıkılık",
+    "easing_but_tight": "temkinli gevşeme",
+}
+
+
+def get_regimes(end_date=None) -> list[tuple[str, str, str]]:
+    """Rejim sınırları. Son rejimin bitişi `end_date` (verinin son günü).
+
+    end_date verilmezse bugün kullanılır. Çağıranın veri sonunu geçmesi tercih
+    edilir: iş birkaç gün çökerse duvar saati veriden ileri gider ve etiket
+    olmayan bir dönemi varmış gibi gösterir.
+
+    Not: regime_metrics maskesi `< end` olduğu için son gün dışarıda kalır.
+    500+ günlük yıllıklandırılmış metriklerde bir günün etkisi ihmal edilebilir.
+    """
+    end = pd.Timestamp(end_date) if end_date is not None else pd.Timestamp.today()
     return [
         ("2021-09-23", "2023-06-01", "negative_real"),
         ("2023-06-01", "2024-03-21", "shock_tightening"),
         ("2024-03-21", "2024-12-26", "peak_tight"),
-        ("2024-12-26", "2026-12-31", "easing_but_tight"),
+        ("2024-12-26", end.strftime("%Y-%m-%d"), "easing_but_tight"),
     ]
-REGIME_LABELS = {
-    "negative_real":    "negatif reel faiz (Eyl'21–Haz'23)",
-    "shock_tightening": "şok sıkılaşma (Haz'23–Mar'24)",
-    "peak_tight":       "zirve sıkılık (Mar'24–Ara'24)",
-    "easing_but_tight": "temkinli gevşeme (Ara'24–May'26)",
-}
+
+
+def _stamp(d) -> str:
+    """2023-06-01 -> Haz'23"""
+    d = pd.Timestamp(d)
+    return f"{_MONTHS_TR[d.month]}'{d.strftime('%y')}"
+
+
+def regime_labels(end_date=None) -> dict[str, str]:
+    """Kullanıcıya gösterilen etiketler — sınırlardan türetilir, elle yazılmaz.
+
+    Eski REGIME_LABELS sabiti bilerek kaldırıldı: import eden kod hata versin,
+    sessizce eski tarihi göstermesin.
+    """
+    return {
+        name: f"{_REGIME_NAMES[name]} ({_stamp(start)}–{_stamp(end)})"
+        for start, end, name in get_regimes(end_date)
+    }
 
 def regime_metrics(returns: pd.Series, regimes: list = None,
                    rf_daily: pd.Series = None) -> dict:
