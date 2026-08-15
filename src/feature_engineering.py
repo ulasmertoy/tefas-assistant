@@ -49,22 +49,49 @@ GLITCH_LO = 0.5                # price < 0.5x local median  -> near-zero / crash
 GLITCH_MAX_JUMP = 1.0          # |single-day return| > 100%  -> impossible jump
 GLITCH_PASSES = 6              # iterate so multi-day cluster edges re-settle & get caught
 
+# --- Ölçek kırılması onarımı (Stage 2a): pay bölünmesi / birleşmesi ---
+# Bu, glitch'ten FARKLI bir olay ve farklı bir çözüm ister.
+#   glitch            : SIÇRAR ve DÖNER  -> o günü NaN'la, seri zaten tutarlı
+#   ölçek kırılması   : ADIM ATAR ve KALIR -> seviyeyi düzelt, NaN'lamak işe yaramaz
+# Örnek: NMG 2025-09-08'de fiyat 97 katına çıktı, pay sayısı 935'te bire düştü.
+# O günü NaN'lasan bile öncesi eski ölçekte, sonrası yeni ölçekte kalır; sonra
+# cagr(prices, 1) bir yıl önceki fiyatı bugünkü fiyata bölünce %11.500 getiri
+# üretir. Bu, getiri yolundan değil FİYAT yolundan gelen bir hata — bu yüzden
+# glitch temizliği onu yakalayamıyordu.
+# Ayırt edici test: sıçrama gününün öncesi/sonrası medyan seviyeleri, sıçrama
+# oranı kadar kalıcı olarak kaymış mı? 2062 fonda 50 sıçramanın 17'si bu testi
+# geçti ve jump/level oranları neredeyse birebir örtüştü.
+SCALE_JUMP_HI = 5.0            # tek günde 5 kattan fazla artış
+SCALE_JUMP_LO = 0.2            # ya da beşte bire düşüş
+SCALE_WINDOW = 20              # kırılmanın iki yanındaki seviye penceresi
+SCALE_MIN_SIDE = 5             # her iki yanda en az bu kadar gözlem olmalı
+SCALE_TOL = 0.5               # |seviye - sıçrama| / sıçrama < bu ise KALICI
+
 # Health-gate HARD ranges: a value outside these (and not NaN) blocks the write.
 # Only INPUTS that can be genuinely impossible are hard-gated. Derived ratios
 # (Sharpe/Sortino) have no impossible range — extreme values are a real product
 # of the high risk-free environment, so they are reported as warnings, not blocked.
+#
+# 2026-08 kalibrasyonu: evren 900 -> 2062 fona çıkınca eski tavanlar (vol 1.5,
+# getiri 50) yanlış yerde kaldı. Bunlar fiziksel sınır değil, eski evrene göre
+# konmuş sezgisel tahminlerdi; yeni evrende gerçek ama nadir fonları bloke
+# ediyorlardı (ör. -%99 düşen hisse yoğun serbest fonlar, %160 oynaklıkla).
+# Kural aynı kaldı, sayılar düzeltildi: hard gate İMKÂNSIZI bloke eder,
+# nadir olan aşağıdaki SOFT eşiklerde raporlanır.
 HARD_RANGES = {
-    "volatility": (0.0, 1.5),        # 0–150% annualized; >150% means corrupt data
+    "volatility": (0.0, 3.0),        # 0–300% annualized; üstü artık veri bozukluğu
     "max_drawdown": (-1.0, 0.0),     # a drop, never positive, never worse than -100%
     "max_drawdown_1y": (-1.0, 0.0),  # same physical bound, scoped to the 1y window
 }
-RETURN_RANGE = (-1.0, 50.0)       # any CAGR/return col: can't lose >100%; 50 = bug ceiling
+RETURN_RANGE = (-1.0, 200.0)      # %100'den fazla kaybedilemez; 200 = bariz bug tavanı
 
 # Soft thresholds (reported, never block):
 SHARPE_EXTREME = 3.0              # |Sharpe| above this is flagged (expected in high RF)
 SORTINO_EXTREME = 8.0
 MM_VOL_WARN = 0.25                # money-market cohort median vol above this -> warning
 STALE_RATIO_WARN = 0.30           # >30% zero-return days -> stale prices, vol unreliable
+VOL_WARN = 1.50                   # eski hard tavan; artık bloke etmiyor, raporluyor
+RETURN_WARN = 10.0                # 10 kattan fazla yıllık getiri: gerçek olabilir, bakılmalı
 
 
 # --------------------------------------------------------------------------- #
@@ -109,6 +136,61 @@ def detect_bad_days(prices: pd.Series,
 
 
 # --------------------------------------------------------------------------- #
+# Ölçek kırılması tespiti + onarımı (Stage 2a — glitch temizliğinden ÖNCE)
+# --------------------------------------------------------------------------- #
+def detect_scale_breaks(prices: pd.Series,
+                        hi: float = SCALE_JUMP_HI, lo: float = SCALE_JUMP_LO,
+                        window: int = SCALE_WINDOW, min_side: int = SCALE_MIN_SIDE,
+                        tol: float = SCALE_TOL) -> list[tuple[pd.Timestamp, float]]:
+    """Kalıcı ölçek kırılmalarını bulur (pay bölünmesi/birleşmesi, nominal değişim).
+
+    Her büyük tek-gün sıçraması için iki sayıyı karşılaştırır:
+      sıçrama oranı : fiyat_bugün / fiyat_dün
+      seviye oranı  : sonraki `window` günün medyanı / önceki `window` günün medyanı
+
+    İkisi birbirine yakınsa kayma KALICI -> ölçek kırılması.
+    Seviye geri dönmüşse sıçrama GEÇİCİ -> glitch, detect_bad_days'in işi.
+
+    Returns
+    -------
+    list[(tarih, oran)]  kronolojik sırada; boş liste = kırılma yok.
+    """
+    s = prices.replace(0, np.nan).dropna()
+    if len(s) < 2 * min_side:
+        return []
+
+    ratio = s / s.shift(1)
+    breaks = []
+    for d, r in ratio[(ratio > hi) | (ratio < lo)].dropna().items():
+        i = s.index.get_loc(d)
+        before = s.iloc[max(0, i - window):i]
+        after = s.iloc[i:i + window]
+        if len(before) < min_side or len(after) < min_side:
+            continue                      # kenarda, karar veremiyoruz
+        level = after.median() / before.median()
+        if abs(level - r) / r < tol:
+            breaks.append((d, float(r)))
+    return breaks
+
+
+def apply_scale_breaks(prices: pd.Series,
+                       breaks: list[tuple[pd.Timestamp, float]]) -> pd.Series:
+    """Seriyi EN SON ölçeğe getirir: her kırılmadan ÖNCEKİ fiyatlar o kırılmanın
+    oranıyla çarpılır. Birden fazla kırılma varsa etki birikir.
+
+    Sıçrama oranını (seviye oranını değil) kullanıyoruz: böylece kırılma gününün
+    getirisi tam olarak %0 olur ve düzeltme yapay bir hareket ÜRETMEZ. O günün
+    gerçek küçük getirisini kaybederiz — 97 katlık sahte getiriye kıyasla ucuz.
+    """
+    if not breaks:
+        return prices
+    adj = pd.Series(1.0, index=prices.index)
+    for d, r in breaks:
+        adj[prices.index < d] *= r
+    return prices * adj
+
+
+# --------------------------------------------------------------------------- #
 # Stage 1: load + clean
 # --------------------------------------------------------------------------- #
 def load_and_clean(funds_path, max_mid_zero_ratio: float = MAX_MID_ZERO_RATIO,
@@ -142,6 +224,13 @@ def load_and_clean(funds_path, max_mid_zero_ratio: float = MAX_MID_ZERO_RATIO,
         active[mid_mask] = np.nan
         ratio = mid_nulled / len(active)                              # GPZ signal (pervasive zeros)
 
+        # Stage 2a: ölçek kırılması ÖNCE onarılır. Sıra önemli — kırılma
+        # düzeltilmeden glitch taraması yapılırsa, detect_bad_days kırılma gününü
+        # "imkânsız sıçrama" sanıp NaN'lar ve kalıcı seviye farkını gizler.
+        scale_breaks = detect_scale_breaks(active)
+        if scale_breaks:
+            active = apply_scale_breaks(active, scale_breaks)
+
         bad_mask = detect_bad_days(active)                            # Stage 2b: repair
         glitch_repaired = int(bad_mask.sum())
         active[bad_mask] = np.nan
@@ -161,6 +250,7 @@ def load_and_clean(funds_path, max_mid_zero_ratio: float = MAX_MID_ZERO_RATIO,
 
         row = dict(code=code, lead_cut=lead_cut, trail_cut=trail_cut,
                    mid_nulled=mid_nulled, glitch_repaired=glitch_repaired,
+                   scale_breaks=len(scale_breaks),
                    active_span=len(active), mid_zero_ratio=ratio, max_daily=max_daily,
                    history_days=history_days, dropped=bool(reason), reason=reason)
         rows.append(row)
@@ -169,10 +259,12 @@ def load_and_clean(funds_path, max_mid_zero_ratio: float = MAX_MID_ZERO_RATIO,
 
     meta = pd.DataFrame(rows).set_index("code")
     meta["title"] = titles
-    logger.info("load_and_clean: kept %d, dropped %d (%s) | glitch-repaired days: %d across %d funds",
+    logger.info("load_and_clean: kept %d, dropped %d (%s) | glitch-repaired days: %d across %d funds "
+                "| scale breaks fixed: %d across %d funds",
                 int((~meta["dropped"]).sum()), int(meta["dropped"].sum()),
                 ", ".join(f"{r}:{n}" for r, n in meta.loc[meta['dropped'], 'reason'].value_counts().items()),
-                int(meta["glitch_repaired"].sum()), int((meta["glitch_repaired"] > 0).sum()))
+                int(meta["glitch_repaired"].sum()), int((meta["glitch_repaired"] > 0).sum()),
+                int(meta["scale_breaks"].sum()), int((meta["scale_breaks"] > 0).sum()))
     return clean, meta
 
 # --------------------------------------------------------------------------- #
@@ -196,8 +288,13 @@ def build_features(clean: dict, meta: pd.DataFrame, rf_table: pd.DataFrame,
     """One row per surviving fund. FE only ORCHESTRATES; every formula lives in
     metrics.py. return_inception is computed only when history_days >= 120 (the
     caller-enforced floor the inception docstring refers to)."""
+    # Verinin son günü. Rejim sınırını duvar saatinden DEĞİL veriden alıyoruz:
+    # günlük iş birkaç gün çökerse bugünün tarihi veriden ileri gider ve son
+    # rejim, elimizde verisi olmayan bir dönemi kapsıyormuş gibi etiketlenir.
+    data_end = max(s.dropna().index.max() for s in clean.values() if s.notna().any())
+
     if regimes is None:
-        regimes = get_regimes()
+        regimes = get_regimes(data_end)
 
     rows = []
     for code, prices in clean.items():
@@ -214,6 +311,10 @@ def build_features(clean: dict, meta: pd.DataFrame, rf_table: pd.DataFrame,
         row = {
             "code": code,
             "title": meta.loc[code, "title"],
+            # Rejim etiketleri bu tarihten türetiliyor (recommend._regime_list).
+            # Tabloya yazıyoruz ki sunum katmanı, metriklerin HANGİ veri sonuna
+            # göre hesaplandığını bilsin — kendi duvar saatine bakmasın.
+            "data_end": data_end,
             "history_days": history_days,
             "league": "young" if history_days < YOUNG_LEAGUE_MAX_DAYS else "mature",
             "return_1m": periods["1A"],
@@ -271,6 +372,25 @@ def health_checks(features: pd.DataFrame, clean: dict = None):
     # --- NaN audit (expected NaNs are fine; we surface counts) ---
     nan_counts = features.isna().sum()
     report["nan_counts"] = nan_counts[nan_counts > 0].to_dict()
+
+    # --- SOFT: eski hard eşikler. Bloke etmiyorlar ama görünmez de kalmıyorlar.
+    # Amaç: kapı sadece imkânsızı durdursun, nadir olan da gözden kaçmasın.
+    extreme_vol = features.loc[features["volatility"] > VOL_WARN, "volatility"]
+    if len(extreme_vol):
+        codes = ", ".join(extreme_vol.sort_values(ascending=False).index[:8])
+        report["warnings"].append(
+            f"{len(extreme_vol)} fon oynaklık >%{VOL_WARN*100:.0f} — gerçek olabilir "
+            f"(çökmüş hisse yoğun serbest fonlar), doğrula: {codes}")
+
+    extreme_ret = {}
+    for col in return_cols:
+        for code, v in features[col].dropna().items():
+            if v > RETURN_WARN:
+                extreme_ret.setdefault(code, []).append(col)
+    if extreme_ret:
+        report["warnings"].append(
+            f"{len(extreme_ret)} fon {RETURN_WARN:.0f}x üzeri getiri — dış kaynakla "
+            f"karşılaştır: {', '.join(list(extreme_ret)[:8])}")
 
     # --- SOFT: extreme Sharpe / Sortino (reported, not blocked) ---
     n_sharpe = int((features["sharpe"].abs() > SHARPE_EXTREME).sum())
