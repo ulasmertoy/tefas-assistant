@@ -23,3 +23,10 @@ src/deneyelim3.ipynb
 data/processed/quick_check.csv
 docker-deneme/
 evals/denemeapisi.py
+
+# Backfill ara dosyası — birleştirildi, tekrar üretilebilir
+data/raw/funds_backfill.parquet
+
+# 2020-2021 arşivi: yeni API 5 yıldan geriye bakmıyor, bu dosya o dönem için
+# tek kaynak. Git'e girmiyor (boyut), YERELDE SİLME.
+data/raw/funds_raw.baseline.parquet
