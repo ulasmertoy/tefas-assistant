@@ -15,3 +15,5 @@ pytefas==0.4.1
 evdspy==2.0.0
 pytefas==0.4.1
 evdspy==2.0.0
+pytefas==0.4.1
+evdspy==2.0.0
