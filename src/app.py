@@ -23,6 +23,13 @@ PROFILE_LABELS = ["Temkinli", "Dengeli", "Agresif"]
 VADE_LABELS = ["1 yıldan kısa", "1–3 yıl", "3 yıl+"]
 TUR_LABELS = ["Farketmez", "Katılım (faizsiz)", "Hisse ağırlıklı"]
 
+# Erişim etiketleri — schemas.ACCESS_LABELS ile birebir aynı olmalı.
+ACCESS_LABELS = {
+    "public": "Herkese açık",
+    "qualified": "Nitelikli yatırımcı",
+    "private": "Özel fon",
+}
+
 # API adresi. Lokalde varsayılan; Docker/deploy'da ortam değişkeniyle ezilir.
 API_URL = os.getenv("API_URL", "http://127.0.0.1:8000")
 @st.cache_resource
@@ -62,6 +69,7 @@ def cards_to_table(cards: list[dict]) -> pd.DataFrame:
         "Kod": c["code"],
         "Fon": c["title"],
         "Kategori": c["category"],
+        "Erişim": ACCESS_LABELS.get(c.get("access", "public"), "—"),
         "Vol %": round(c["volatility"] * 100, 1),
         "Sharpe": round(c["sharpe"], 2),
         "Max Düşüş %": round(c["max_drawdown"] * 100, 1),
@@ -178,6 +186,23 @@ def render_flagged(flagged: list[dict]) -> None:
     )
     st.dataframe(cards_to_table(flagged), hide_index=True, width="stretch")
 
+def render_restricted(items: list[dict]) -> None:
+    """Aynı risk profiline uyan ama satın alınamayan fonlar. ÖNERİ DEĞİL —
+    şeffaflık için: kullanıcı 'bu bantta başka ne var?' diye merak ederse
+    görsün, ama alamayacağı bir fonu tavsiye olarak almasın."""
+    if not items:
+        return
+
+    st.subheader(f"🔒 Erişimi kısıtlı fonlar ({len(items)})")
+    st.info(
+        "Bu fonlar seçtiğin risk profiline uyuyor ancak **herkes tarafından satın "
+        "alınamaz.** Serbest fonlar yalnızca nitelikli yatırımcılara, özel fonlar "
+        "ise belirli bir yatırımcı grubuna sunulur. Bilgi amaçlı listeleniyorlar; "
+        "önerilen fonlar listesine dahil değiller."
+    )
+    st.dataframe(cards_to_table(items), hide_index=True, width="stretch")
+
+
 # --------------------------------------------------------------- başlık ---- #
 st.title("📊 TEFAS Fon Tarama Asistanı")
 st.caption("Birkaç soruyla risk profilini al, fonları risk-ayarlı (Sharpe) tara; "
@@ -234,6 +259,7 @@ if submitted:
     render_scatter(result["cards"], flagged)
     render_cards(result["cards"])
     render_flagged(flagged)
+    render_restricted(result.get("qualified_only", []))
 
 
 # --------------------------------------------------------------- footer ---- #

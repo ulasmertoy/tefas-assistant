@@ -23,6 +23,29 @@ class RankBy(str, Enum):
     DRAWDOWN = "drawdown_then_sharpe"     # smallest drop first, Sharpe as tie-break
 
 
+# Erişilebilirlik — `league`den AYRI bir boyut, bilerek.
+# league  : fonun geçmişi metriklere güvenmeye yetiyor mu? (mature / young)
+# access  : kullanıcı bu fonu satın ALABİLİR mi?
+# İkisi bağımsız: bir fon hem olgun hem de yalnızca nitelikli yatırımcıya açık
+# olabilir. Aynı alana sıkıştırılsalardı bu kombinasyon ifade edilemezdi.
+#
+#   public    — herkes alabilir (2058 fonun 723'ü)
+#   qualified — serbest fon, yalnızca nitelikli yatırımcı (834)
+#   private   — özel fon, kapalı bir yatırımcı grubuna kurulmuş (501)
+#
+# Neden önemli: evrenin ~%65'i sıradan kullanıcının erişemediği fonlardan
+# oluşuyor. Filtrelemezsek motor, kişinin bankasından ALAMAYACAĞI bir fonu
+# öneriyor. Sayı doğru olsa bile tavsiye kullanılamaz — yanlış Sharpe'tan
+# daha kötü bir hata.
+Access = Literal["public", "qualified", "private"]
+
+ACCESS_LABELS: dict[str, str] = {
+    "public": "Herkese açık",
+    "qualified": "Nitelikli yatırımcı",
+    "private": "Özel fon",
+}
+
+
 class RiskProfile(BaseModel):
     """Resolved NUMERIC criteria. The engine sees only these numbers, never a tier
     name — so the 3 presets, a future free-form query, and an agent all produce the
@@ -62,6 +85,7 @@ class FundRecommendation(BaseModel):
     title: str
     category: str
     league: Literal["mature", "young"]
+    access: Access = "public"          # kullanıcı bunu satın alabilir mi?
     rank: int = Field(ge=1)
     volatility: float = Field(ge=0.0)
     sharpe: float
@@ -73,16 +97,6 @@ class FundRecommendation(BaseModel):
     return_1y: float | None = None        # None when the fund is younger than 1y
     history_days: int = Field(ge=0)
     regime: list[RegimeEntry] = []
-
-class RecommendationResponse(BaseModel):
-    """The full answer for one profile. `mature` is the primary list; `young` is the
-    separate short-history list (non-empty only when the profile opts in — i.e.
-    aggressive). `total_eligible` is how many funds matched the profile before any
-    top-N trim, so a consumer can say 'showing 10 of 221'."""
-    profile: RiskProfile
-    total_eligible: int = Field(ge=0)
-    mature: list[FundRecommendation]
-    young: list[FundRecommendation] = []
 
 # LLM explainer: TEXT-ONLY output (no numbers, on purpose)
 class ExplainedFund(BaseModel):
@@ -121,6 +135,7 @@ class FundCard(BaseModel):
     title: str
     category: str
     league: Literal["mature", "young"]
+    access: Access = "public"
     volatility: float
     sharpe: float
     max_drawdown: float
@@ -141,6 +156,7 @@ class RecommendationResult(BaseModel):
     total_eligible: int = Field(ge=0)
     cards: list[FundCard]
     high_return_flagged: list[FundCard] = []
+    qualified_only: list[FundCard] = []
 
 class RecommendationResponse(BaseModel):
     """The full answer for one profile. `mature` is the primary list; `young` is the
@@ -154,3 +170,6 @@ class RecommendationResponse(BaseModel):
     mature: list[FundRecommendation]
     young: list[FundRecommendation] = []
     high_return_flagged: list[FundRecommendation] = []
+    # Aynı profile uyan ama erişimi kısıtlı fonlar. ÖNERİ DEĞİL — merak eden
+    # kullanıcı "bu bantta başka ne var?" diye bakabilsin diye ayrı tutuluyor.
+    qualified_only: list[FundRecommendation] = []

@@ -94,6 +94,27 @@ SUBMIT_TOOL = {
 }
 
 
+
+# --------------------------------------------------------------------------- #
+# Prompt'a NE gitmeyeceği — bilerek tek yerde
+# --------------------------------------------------------------------------- #
+# rec.model_dump_json() nesnenin TAMAMINI dökümler. Şemaya yeni bir liste
+# eklendiği anda o liste sessizce prompt'a da girer. Bu gerçekten oldu:
+# qualified_only eklenince model kısıtlı fonları "önerilenler" gibi anlatmaya
+# başladı ("Özellikle PBR, ZSB ve TMV gibi..." — ZSB ve TMV satın alınamaz).
+#
+# Bu iki liste ÖNERİ DEĞİL, sadece şeffaflık için ekranda duruyorlar:
+#   high_return_flagged : "neden en yüksek getirililer önerilmedi?" cevabı
+#   qualified_only      : "bu bantta başka ne var?" cevabı
+# Model onları görmemeli — hem yanlış anlatır hem boşuna token yakar.
+_NOT_FOR_LLM = {"high_return_flagged", "qualified_only"}
+
+
+def _prompt_payload(rec: "RecommendationResponse") -> str:
+    """Modele gidecek JSON — öneri dışı listeler çıkarılmış hâli."""
+    return rec.model_dump_json(exclude=_NOT_FOR_LLM)
+
+
 def _run_recommend(tool_input: dict, features: pd.DataFrame) -> RecommendationResponse:
     """Execute the recommend_funds tool: call the deterministic engine, return the
     typed response (kept so we can merge the numbers back later)."""
@@ -123,6 +144,7 @@ def merge_by_code(rec: RecommendationResponse, exp: "ExplainedResponse | None"
             code=fund.code,
             title=fund.title,
             category=fund.category,
+            access=fund.access,
             league=fund.league,
             volatility=fund.volatility,
             sharpe=fund.sharpe,
@@ -140,6 +162,7 @@ def merge_by_code(rec: RecommendationResponse, exp: "ExplainedResponse | None"
     flagged = [
         FundCard(
             code=f.code, title=f.title, category=f.category, league=f.league,
+            access=f.access,
             volatility=f.volatility, sharpe=f.sharpe, max_drawdown=f.max_drawdown,
             return_1m=f.return_1m, return_3m=f.return_3m, return_6m=f.return_6m,
             return_ytd=f.return_ytd, return_1y=f.return_1y,
@@ -147,12 +170,26 @@ def merge_by_code(rec: RecommendationResponse, exp: "ExplainedResponse | None"
         )
         for f in rec.high_return_flagged
     ]
+    # Erişimi kısıtlı fonlar: sayı-only, aynı gerekçeyle. LLM'e gönderilmiyorlar
+    # ki model onları "önerilmiş" gibi anlatmasın — ve boşuna token yakılmasın.
+    restricted = [
+        FundCard(
+            code=f.code, title=f.title, category=f.category, league=f.league,
+            access=f.access,
+            volatility=f.volatility, sharpe=f.sharpe, max_drawdown=f.max_drawdown,
+            return_1m=f.return_1m, return_3m=f.return_3m, return_6m=f.return_6m,
+            return_ytd=f.return_ytd, return_1y=f.return_1y,
+            explanation=None,
+        )
+        for f in rec.qualified_only
+    ]
     return RecommendationResult(
         summary=summary,        # exp.summary yerine değişken
         note=note,              # exp.note yerine değişken
         total_eligible=rec.total_eligible,
         cards=cards,
         high_return_flagged=flagged,
+        qualified_only=restricted,
     )
 
 
@@ -190,7 +227,7 @@ def explain(user_query: str, features: pd.DataFrame, max_turns: int = 6
                 rec_response = _run_recommend(block.input, features)
                 tool_results.append({
                     "type": "tool_result", "tool_use_id": block.id,
-                    "content": rec_response.model_dump_json(),
+                    "content": _prompt_payload(rec_response),
                 })
             elif block.name == "submit_explanation":
                 if rec_response is None:
@@ -254,10 +291,10 @@ def explain_selected(rec: "RecommendationResponse", user_note: str = "",
     note = (user_note or "").strip()
     if note:
         system = _SELECT_SYSTEM_NOTE
-        user_msg = f"Kullanıcının notu: {note}\n\nAday fonlar:\n{rec.model_dump_json()}"
+        user_msg = f"Kullanıcının notu: {note}\n\nAday fonlar:\n{_prompt_payload(rec)}"
     else:
         system = _SELECT_SYSTEM
-        user_msg = "Aşağıdaki seçilmiş fonları açıkla:\n" + rec.model_dump_json()
+        user_msg = "Aşağıdaki seçilmiş fonları açıkla:\n" + _prompt_payload(rec)
 
     messages = [{"role": "user", "content": user_msg}]
     for _ in range(max_turns):

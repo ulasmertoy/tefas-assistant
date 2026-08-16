@@ -84,9 +84,29 @@ def categorize(title: str) -> str:
 
 
 # --------------------------------------------------------------------------- #
+# Erişilebilirlik — kullanıcı bu fonu gerçekten satın alabilir mi?
+# --------------------------------------------------------------------------- #
+def classify_access(title: str) -> str:
+    """Fon başlığından erişim seviyesini çıkarır.
+
+    Sıra önemli, en dar olan önce: 'SERBEST ÖZEL FON' hem serbest hem özeldir,
+    ama belirleyici olan özel oluşudur (kapalı bir yatırımcı grubuna kurulmuş).
+
+    Kategori gibi bu da başlıktan türetiliyor çünkü TEFAS API'si ayrı bir alan
+    vermiyor. Resmî bir alan gelirse burası tek noktadan değişir.
+    """
+    t = _norm(title)
+    if "OZEL FON" in t:
+        return "private"      # tek bir kuruma/gruba özel
+    if "SERBEST" in t:
+        return "qualified"    # nitelikli yatırımcı
+    return "public"           # herkes alabilir
+
+
+# --------------------------------------------------------------------------- #
 # Ranking core (pure pandas)
 # --------------------------------------------------------------------------- #
-_FRONT_COLS = ["title", "category", "league", "rank", "volatility", "sharpe",
+_FRONT_COLS = ["title", "category", "access", "league", "rank", "volatility", "sharpe",
                "max_drawdown", "return_1y", "history_days"]
 
 
@@ -102,13 +122,21 @@ def _rank(pool: pd.DataFrame, rank_by: RankBy, league: str) -> pd.DataFrame:
     return ordered.assign(league=league, rank=range(1, len(ordered) + 1))
 
 
-def screen_funds(features: pd.DataFrame, profile: RiskProfile) -> pd.DataFrame:
+def screen_funds(features: pd.DataFrame, profile: RiskProfile,
+                 access: "str | None" = "public") -> pd.DataFrame:
     """Eligible funds for `profile`, ranked. Takes the feature table + a RiskProfile,
     returns a ranked DataFrame. The `league` column separates the 'mature' list
-    (always) from the 'young' list (present only when the profile asks for it)."""
+    (always) from the 'young' list (present only when the profile asks for it).
+
+    access : hangi erişim seviyesi taransın. 'public' (varsayılan) yalnızca
+             herkesin alabileceği fonlar; None = filtre yok (tüm evren).
+             Kısıtlı fonlar ayrı bir listede sunuluyor, ana öneriye karışmıyor.
+    """
     df = features.copy()
     if "category" not in df.columns:
         df["category"] = df["title"].map(categorize)
+    if "access" not in df.columns:
+        df["access"] = df["title"].map(classify_access)
 
     # eligibility: volatility band + computable vol + optional category whitelist
     elig = df[df["volatility"].notna()
@@ -116,6 +144,8 @@ def screen_funds(features: pd.DataFrame, profile: RiskProfile) -> pd.DataFrame:
               & df["max_drawdown"].notna()  #ekledim
               & (df["volatility"] >= profile.vol_min)
               & (df["volatility"] <= profile.vol_max)]
+    if access is not None:
+        elig = elig[elig["access"] == access]
     if profile.allowed_categories is not None:
         elig = elig[elig["category"].isin(profile.allowed_categories)]
 
@@ -202,6 +232,7 @@ def _to_fund(code, row) -> FundRecommendation:
         code=str(code),
         title=row["title"],
         category=row["category"],
+        access=row.get("access", "public"),
         league=row["league"],
         rank=int(row["rank"]),
         volatility=float(row["volatility"]),
@@ -225,6 +256,11 @@ def _high_return_flagged(features: pd.DataFrame, profile: RiskProfile,
     df = features.copy()
     if "category" not in df.columns:
         df["category"] = df["title"].map(categorize)
+    if "access" not in df.columns:
+        df["access"] = df["title"].map(classify_access)
+    # Sadece public: "neden en yüksek getirili fonlar önerilmedi?" sorusunun
+    # cevabı, kullanıcının ALABİLECEĞİ fonlarla verilmeli.
+    df = df[df["access"] == "public"]
 
     elig = df[df["volatility"].notna()
               & df["sharpe"].notna()
@@ -256,9 +292,21 @@ def build_response(features: pd.DataFrame, profile: "str | RiskProfile" = "balan
     flagged = (_high_return_flagged(features, profile)
                if profile.name == "aggressive" else [])
 
+    # Aynı profile uyan ama erişimi kısıtlı fonlar (serbest + özel). ÖNERİ DEĞİL:
+    # kullanıcı "bu risk bandında başka ne var?" diye merak ederse görebilsin.
+    # Aynı bant, aynı sıralama — tek fark satın alınabilirlik.
+    restricted = []
+    for tier in ("qualified", "private"):
+        pool = screen_funds(features, profile, access=tier)
+        pool = pool[pool["league"] == "mature"]
+        if top_n is not None:
+            pool = pool.head(top_n)
+        restricted += [_to_fund(c, r) for c, r in pool.iterrows()]
+
     return RecommendationResponse(profile=profile, total_eligible=total_eligible,
                                   mature=mature, young=young,
-                                  high_return_flagged=flagged)
+                                  high_return_flagged=flagged,
+                                  qualified_only=restricted)
 
 # --------------------------------------------------------------------------- #
 # UI → engine profile mappinga (app.py'den taşındı)
