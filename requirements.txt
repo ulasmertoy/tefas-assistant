@@ -9,6 +9,7 @@ streamlit
 python-dotenv==1.2.2
 slowapi==0.1.10
 plotly>=5.20
+
+
 pytefas==0.4.1
-evdspy==2.0.0pytefas==0.4.1
 evdspy==2.0.0
