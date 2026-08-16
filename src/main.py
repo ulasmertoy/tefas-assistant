@@ -3,7 +3,8 @@ main.py — FastAPI servis katmanı.
 Engine (recommend.py) + LLM explainer (explainer.py) tek bir HTTP endpoint'inde
 birleşiyor. Streamlit artık doğrudan Python import etmek yerine bu API'yi çağırır.
 """
-import logging                          # YENİ: print yerine "ciddi" kayıt tutmak için
+import logging
+import os                          # YENİ: print yerine "ciddi" kayıt tutmak için
 import time                             # YENİ: her isteğin kaç saniye sürdüğünü ölçmek için
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -29,12 +30,39 @@ logger = logging.getLogger("tefas-api")
 # Veri sunucu açılırken BİR KEZ yüklenir, bu sözlükte tutulur.
 state: dict = {}
 
-DATA_PATH = Path(__file__).parent.parent / "data" / "processed" / "funds_features.parquet"
+# Metrik tablosu ayri bir data repo'da yasiyor, Actions her gun guncelliyor.
+# Boylece veri guncellemesi ile kod deploy'u birbirinden ayrisiyor.
+FEATURES_URL = os.getenv(
+    "FEATURES_URL",
+    "https://raw.githubusercontent.com/ulasmertoy/tefas-data/main/"
+    "data/processed/funds_features.parquet",
+)
+LOCAL_FALLBACK = Path(__file__).parent.parent / "data" / "processed" / "funds_features.parquet"
+
+
+def load_features_with_fallback():
+    """Once uzak kaynagi dene, olmazsa image'daki kopyaya dus.
+
+    Veri guncelligi onemli ama SERVISIN AYAKTA KALMASI daha onemli: GitHub'a
+    ulasilamadiginda dunku veriyle calisan bir API, hic acilmayan bir API'den
+    iyidir. Sessizce degil - log'da hangi kaynagin kullanildigi yaziyor.
+    """
+    try:
+        df = load_features(FEATURES_URL)
+        logger.info("Veri kaynagi: UZAK (%s)", FEATURES_URL)
+        return df
+    except Exception as exc:
+        logger.error("Uzak veri okunamadi (%s) - yerel kopyaya dusuluyor", exc)
+        df = load_features(LOCAL_FALLBACK)
+        logger.warning("Veri kaynagi: YEREL yedek - guncel olmayabilir")
+        return df
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    state["features"] = load_features(DATA_PATH)            # açılışta yükle
-    logger.info("Veri yüklendi: %d fon", len(state["features"]))  # YENİ: açılış kaydı
+    state["features"] = load_features_with_fallback()
+    feats = state["features"]
+    data_end = feats["data_end"].iloc[0] if "data_end" in feats.columns else None
+    logger.info("Veri yuklendi: %d fon | veri sonu: %s", len(feats), data_end)
     yield                                                   # sunucu burada çalışır
     state.clear()                                           # kapanışta temizle
     logger.info("Sunucu kapandı, state temizlendi.")        # YENİ: kapanış kaydı
@@ -82,7 +110,13 @@ def get_features():
 @app.get("/health")
 def health():
     """Sunucu ayakta mı, veri yüklü mü?"""
-    return {"status": "ok", "funds_loaded": len(state.get("features", []))}
+    feats = state.get("features")
+    data_end = None
+    if feats is not None and "data_end" in feats.columns and len(feats):
+        data_end = str(feats["data_end"].iloc[0].date())
+    return {"status": "ok",
+            "funds_loaded": len(feats) if feats is not None else 0,
+            "data_end": data_end}
 
 @app.post("/recommend")
 @limiter.limit("10/minute")                    # ← @app.post'un ALTINDA olmalı, sırası önemli
