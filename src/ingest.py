@@ -18,6 +18,7 @@ fiyat serilerine bakıyor, bu gate ise ingest'in kendisine bakıyor.
 """
 import argparse
 import logging
+import os
 import sys
 from pathlib import Path
 
@@ -29,7 +30,7 @@ import feature_engineering as fe
 
 logger = logging.getLogger("ingest")
 
-BASE = Path(__file__).parent.parent / "data"
+BASE = Path(os.getenv("TEFAS_DATA_DIR", Path(__file__).parent.parent / "data"))
 RAW_FUNDS = BASE / "raw" / "funds_raw.parquet"
 RAW_RF = BASE / "raw" / "tcmb_rates.parquet"
 FEATURES = BASE / "processed" / "funds_features.parquet"
